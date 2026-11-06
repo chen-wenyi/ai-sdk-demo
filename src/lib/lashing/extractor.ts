@@ -165,7 +165,9 @@ export function extractImageFromPayload(body: unknown): string | null {
 }
 
 /**
- * Builds OpenAI-compatible provider instance (defaulting to DashScope / Qwen)
+ * Builds OpenAI-compatible provider instance (defaulting to DashScope / Qwen).
+ * Injects `enable_thinking: false` into request bodies so Qwen3 models return immediately
+ * without spending 100+ seconds in hidden background thinking.
  */
 export function createQwenClient(options: { apiKey?: string; baseURL?: string }) {
   const apiKey =
@@ -181,14 +183,111 @@ export function createQwenClient(options: { apiKey?: string; baseURL?: string })
     process.env.QWEN_BASE_URL ||
     DEFAULT_QWEN_BASE_URL;
 
+  const customFetch: typeof fetch = async (input, init) => {
+    if (init && typeof init.body === "string") {
+      try {
+        const parsedBody = JSON.parse(init.body) as Record<string, unknown>;
+        if (parsedBody.enable_thinking === undefined) {
+          parsedBody.enable_thinking = false;
+        }
+        init = {
+          ...init,
+          body: JSON.stringify(parsedBody),
+        };
+      } catch {
+        // Keep original body if not JSON
+      }
+    }
+    return fetch(input, init);
+  };
+
   return {
     client: createOpenAI({
       apiKey,
       baseURL,
+      fetch: customFetch,
     }),
     apiKey,
     baseURL,
   };
+}
+
+/**
+ * Plain Text Chat Service:
+ * Allows testing model response speed with ordinary text prompts (no image required)
+ * with `enable_thinking: false` enforced.
+ */
+export async function generatePlainTextReply(options: {
+  prompt: string;
+  apiKey?: string;
+  baseURL?: string;
+  model?: string;
+  mockFallback?: boolean;
+}): Promise<{ text: string; durationMs: number; model: string }> {
+  const startTime = Date.now();
+  const { prompt, apiKey, baseURL, model, mockFallback } = options;
+
+  const resolvedApiKey =
+    apiKey ||
+    process.env.DASHSCOPE_API_KEY ||
+    process.env.QWEN_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    "";
+
+  const resolvedBaseURL =
+    baseURL ||
+    process.env.DASHSCOPE_BASE_URL ||
+    process.env.QWEN_BASE_URL ||
+    DEFAULT_QWEN_BASE_URL;
+
+  const resolvedModel =
+    model ||
+    process.env.DASHSCOPE_MODEL ||
+    process.env.QWEN_MODEL ||
+    DEFAULT_QWEN_MODEL;
+
+  const shouldFallback =
+    Boolean(mockFallback) ||
+    !resolvedApiKey ||
+    process.env.NODE_ENV === "test";
+
+  if (!resolvedApiKey && shouldFallback) {
+    return {
+      text: `【本地模拟响应（未配置 API Key）】收到提示词：“${prompt}”。请在右上角配置 DashScope API Key 以测试真实大模型响应速度（已默认注入 enable_thinking: false 极速模式）。`,
+      durationMs: Math.max(1, Date.now() - startTime),
+      model: resolvedModel,
+    };
+  }
+
+  const { client } = createQwenClient({
+    apiKey: resolvedApiKey,
+    baseURL: resolvedBaseURL,
+  });
+
+  const modelInstance = client.chat(resolvedModel);
+
+  try {
+    const res = await generateText({
+      model: modelInstance,
+      prompt: prompt || "你好",
+      maxRetries: 0,
+    });
+
+    return {
+      text: res.text,
+      durationMs: Math.max(1, Date.now() - startTime),
+      model: resolvedModel,
+    };
+  } catch (err) {
+    if (shouldFallback && process.env.NODE_ENV === "test") {
+      return {
+        text: `【测试环境回退响应】收到提示词：“${prompt}”`,
+        durationMs: Math.max(1, Date.now() - startTime),
+        model: resolvedModel,
+      };
+    }
+    throw err;
+  }
 }
 
 /**

@@ -86,6 +86,19 @@ export default function Home() {
           throw new Error(data.error || "请求处理失败，请稍后重试");
         }
 
+        if (data.mode === "text" && typeof data.text === "string") {
+          const durationMs = data.durationMs || clientElapsedMs;
+          const assistantMessage: ChatMessage = {
+            id: `assistant-${Date.now()}`,
+            role: "assistant",
+            content: data.text,
+            durationMs,
+            createdAt: new Date(),
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+          return;
+        }
+
         const rawReport: WeijieLashingReport = data.report || data;
         const durationMs = rawReport.durationMs || clientElapsedMs;
         const report: WeijieLashingReport = {

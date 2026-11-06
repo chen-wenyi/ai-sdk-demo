@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   extractImageFromPayload,
   extractLashingDataFromImage,
+  generatePlainTextReply,
   DEFAULT_QWEN_BASE_URL,
   DEFAULT_QWEN_MODEL,
 } from "@/lib/lashing/extractor";
@@ -82,8 +83,36 @@ export async function POST(req: NextRequest) {
         : queryMockFallback ?? headerMockFallback;
 
     const image = extractImageFromPayload(body);
+    const plainPrompt =
+      typeof body.prompt === "string" ? body.prompt.trim() : "";
 
     if (!image) {
+      if (plainPrompt) {
+        const reply = await generatePlainTextReply({
+          prompt: plainPrompt,
+          apiKey,
+          baseURL,
+          model,
+          mockFallback,
+        });
+        const totalDurationMs =
+          reply.durationMs || Math.max(1, Date.now() - reqStart);
+        return NextResponse.json(
+          {
+            mode: "text",
+            text: reply.text,
+            model: reply.model,
+            durationMs: totalDurationMs,
+          },
+          {
+            status: 200,
+            headers: {
+              "x-duration-ms": String(totalDurationMs),
+            },
+          }
+        );
+      }
+
       return NextResponse.json(
         {
           error:

@@ -145,4 +145,26 @@ describe("API Route: /api/chat", () => {
     expect(data.durationMs).toBeGreaterThan(0);
     expect(res.headers.get("x-duration-ms")).toBeDefined();
   });
+
+  it("POST /api/chat should support plain text prompt input without image to test response speed", async () => {
+    const req = new NextRequest("http://localhost:3000/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-mock-fallback": "true",
+      },
+      body: JSON.stringify({
+        prompt: "测试普通对话速度",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    const data = await res.json();
+    expect(data.mode).toBe("text");
+    expect(data.text).toContain("测试普通对话速度");
+    expect(typeof data.durationMs).toBe("number");
+    expect(data.durationMs).toBeGreaterThan(0);
+  });
 });
