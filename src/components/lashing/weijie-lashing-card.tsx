@@ -33,6 +33,7 @@ import {
   Trash2,
   Plus,
   RefreshCw,
+  Clock,
 } from "lucide-react";
 
 export interface WeijieLashingCardProps {
@@ -130,10 +131,13 @@ export function WeijieLashingCard({
 
   const handleSaveEditing = () => {
     setLocalHumanVerified(true);
-    const verified = verifyLashingData({
-      ...draft,
-      isHumanVerified: true,
-    });
+    const verified = verifyLashingData(
+      {
+        ...draft,
+        isHumanVerified: true,
+      },
+      report.durationMs
+    );
 
     setIsEditing(false);
     onUpdateReport?.(verified);
@@ -285,13 +289,23 @@ export function WeijieLashingCard({
             ) : (
               <span
                 data-testid="lashing-header-title"
-                className="font-medium text-sm sm:text-base text-foreground tracking-tight flex items-center gap-1.5"
+                className="font-medium text-sm sm:text-base text-foreground tracking-tight flex items-center gap-1.5 flex-wrap"
               >
                 <Calendar className="size-3.5 text-muted-foreground" />
                 <span>{report.date || "当日"}</span>
                 <span className="text-muted-foreground/60">|</span>
                 <Ship className="size-3.5 text-muted-foreground" />
                 <span>{report.voyage || "作业航次"}</span>
+                {typeof report.durationMs === "number" && report.durationMs > 0 && (
+                  <Badge
+                    variant="outline"
+                    data-testid="duration-badge"
+                    className="ml-1 text-[11px] font-mono py-0 px-1.5 h-5 border-border/80 text-muted-foreground bg-background/60 flex items-center gap-1"
+                  >
+                    <Clock className="size-3 text-primary" />
+                    <span>{`耗时 ${(report.durationMs / 1000).toFixed(2)}s`}</span>
+                  </Badge>
+                )}
               </span>
             )}
           </div>

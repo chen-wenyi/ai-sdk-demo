@@ -10,12 +10,6 @@ export const LashingItemSchema = z.object({
 export type LashingItem = z.infer<typeof LashingItemSchema>;
 
 export const RawLashingInputSchema = z.object({
-  reasoning: z
-    .string()
-    .optional()
-    .describe(
-      "思维链(CoT)推理步骤：必须在填写以下数据前，先一步步写出：1.定位左侧绑扎队第2行E伟捷；2.横向逐列读取E伟捷行的非零箱型代码、单箱台数和绑扎箱数；3.读取右侧合计箱数、绑扎车装台数、作业人数与队长签名。"
-    ),
   teamName: z.string().default("E伟捷"),
   date: z.string().default(""),
   voyage: z.string().default(""),
@@ -43,7 +37,7 @@ export const WeijieLashingReportSchema = z.object({
   isValid: z.boolean(),
   discrepancyMessage: z.string().optional(),
   isHumanVerified: z.boolean().optional(),
-  reasoning: z.string().optional(),
+  durationMs: z.number().optional(),
 });
 
 export type WeijieLashingReport = z.infer<typeof WeijieLashingReportSchema>;

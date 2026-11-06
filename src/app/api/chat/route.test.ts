@@ -141,39 +141,8 @@ describe("API Route: /api/chat", () => {
     expect(data.calculatedVehicleUnits).toBe(162);
     expect(data.isValid).toBe(true);
     expect(data.discrepancyMessage).toBeUndefined();
-  });
-
-  it("POST /api/chat should support SSE streaming mode with stage, cot_delta, and report events", async () => {
-    const req = new NextRequest("http://localhost:3000/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-mock-fallback": "true",
-        "x-stream": "true",
-      },
-      body: JSON.stringify({
-        image: "data:image/jpeg;base64,sampleStreamData",
-        stream: true,
-      }),
-    });
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("text/event-stream");
-
-    const text = await res.text();
-    const events = text
-      .split("\n\n")
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => JSON.parse(line.slice(5).trim()));
-
-    expect(events.some((e) => e.type === "stage")).toBe(true);
-    expect(events.some((e) => e.type === "cot_delta")).toBe(true);
-    const reportEvent = events.find((e) => e.type === "report");
-    expect(reportEvent).toBeDefined();
-    expect(reportEvent.report.teamName).toBe("E伟捷");
-    expect(reportEvent.report.totalBoxes).toBe(54);
-    expect(reportEvent.report.reasoning).toContain("锁定第2行【E伟捷】");
+    expect(typeof data.durationMs).toBe("number");
+    expect(data.durationMs).toBeGreaterThan(0);
+    expect(res.headers.get("x-duration-ms")).toBeDefined();
   });
 });

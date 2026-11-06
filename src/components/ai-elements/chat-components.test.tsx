@@ -77,34 +77,30 @@ describe("Chat Components Integration", () => {
     expect(loaded.baseURL).toBe(DEFAULT_SETTINGS.baseURL);
   });
 
-  it("should render live step-by-step progress and CoT stream during extraction", () => {
+  it("should render live elapsed timer during extraction", () => {
     const html = renderToString(
       <ChatMessageList
         messages={[]}
         isLoading={true}
-        streamingStage="step-3-extract"
-        streamingStageDetail="步骤 3/4：正在横向逐列读取箱型明细、单箱台数与手写签名..."
-        streamingCot="1. 定位第2行【E伟捷】；2. 48FR读取到28箱..."
         modelName="qwen-vl-ocr"
       />
     );
 
     expect(html).toContain('data-testid="chat-thinking-indicator"');
-    expect(html).toContain("步骤 3/4：正在横向逐列读取箱型明细、单箱台数与手写签名...");
-    expect(html).toContain('data-testid="live-cot-stream"');
-    expect(html).toContain("1. 定位第2行【E伟捷】；2. 48FR读取到28箱...");
+    expect(html).toContain('data-testid="live-elapsed-timer"');
     expect(html).toContain("qwen-vl-ocr");
   });
 
-  it("should render collapsible CoT reasoning panel on completed assistant message", () => {
+  it("should render duration badge on completed assistant message and card", () => {
     const messages: ChatMessage[] = [
       {
-        id: "msg-cot",
+        id: "msg-duration",
         role: "assistant",
         content: "已提取完成：",
+        durationMs: 2350,
         report: {
           ...benchmarkReport,
-          reasoning: "步骤1：锁定E伟捷；步骤2：48FR=28，40FM=26，合计54箱。",
+          durationMs: 2350,
         },
       },
     ];
@@ -113,8 +109,8 @@ describe("Chat Components Integration", () => {
       <ChatMessageList messages={messages} isLoading={false} />
     );
 
-    expect(html).toContain('data-testid="cot-reasoning-panel"');
-    expect(html).toContain("大模型思维链 (CoT) 定位与核对过程");
-    expect(html).toContain("步骤1：锁定E伟捷；步骤2：48FR=28，40FM=26，合计54箱。");
+    expect(html).toContain('data-testid="message-duration"');
+    expect(html).toContain('data-testid="duration-badge"');
+    expect(html).toContain("2.35s");
   });
 });

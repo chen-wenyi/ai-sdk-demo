@@ -18,7 +18,7 @@ export function normalizeTeamName(rawTeamName: string): string {
  */
 export function verifyLashingData(
   input: RawLashingInput,
-  reasoning?: string
+  durationMs?: number
 ): WeijieLashingReport {
   const teamName = normalizeTeamName(input.teamName);
 
@@ -80,6 +80,6 @@ export function verifyLashingData(
     isValid,
     discrepancyMessage,
     isHumanVerified: input.isHumanVerified,
-    reasoning: reasoning || input.reasoning || undefined,
+    durationMs,
   };
 }
