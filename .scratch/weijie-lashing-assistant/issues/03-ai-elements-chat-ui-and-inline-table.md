@@ -4,11 +4,11 @@
 
 **Blocked by:** 02: Qwen 视觉多模态结构化提取端点与端到端接口
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance Criteria
 
-- [ ] 聊天输入框基于 shadcn AI Elements 的 Prompt Input 和 Attachment 模式，支持图片拖拽选择、剪贴板粘贴与删除
-- [ ] 顶部导航栏具备 Model Selector 与配置弹窗，允许用户配置 API Key、Base URL 与 Model Name，并安全保存在浏览器本地
-- [ ] 助手回复在聊天消息流内直接展示卡片化横向转置表格，表头表体紧凑整齐，支持水平横向滑动
-- [ ] 卡片顶部清晰呈现“11月2日 | 中远海运欧亚航 V27”，底部呈现合计箱数（54）、绑扎车装台数（162）、作业人数（20）与队长签名（李春河）
+- [x] 聊天输入框基于 shadcn AI Elements 的 Prompt Input 和 Attachment 模式，支持图片拖拽选择、剪贴板粘贴与删除
+- [x] 顶部导航栏具备 Model Selector 与配置弹窗，允许用户配置 API Key、Base URL 与 Model Name，并安全保存在浏览器本地
+- [x] 助手回复在聊天消息流内直接展示卡片化横向转置表格，表头表体紧凑整齐，支持水平横向滑动
+- [x] 卡片顶部清晰呈现“11月2日 | 中远海运欧亚航 V27”，底部呈现合计箱数（54）、绑扎车装台数（162）、作业人数（20）与队长签名（李春河）
