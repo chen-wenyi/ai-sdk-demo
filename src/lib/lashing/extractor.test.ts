@@ -1,0 +1,215 @@
+import { describe, it, expect } from "vitest";
+import fs from "fs";
+import path from "path";
+import {
+  extractImageFromPayload,
+  createQwenClient,
+  extractLashingDataFromImage,
+  DEFAULT_QWEN_BASE_URL,
+} from "./extractor";
+import { RawLashingInput } from "./types";
+
+describe("Extractor Utilities", () => {
+  it("should extract image from direct string fields (image, dataUrl, file)", () => {
+    const direct1 = extractImageFromPayload({
+      image: "data:image/jpeg;base64,abc1234",
+    });
+    expect(direct1).toBe("data:image/jpeg;base64,abc1234");
+
+    const direct2 = extractImageFromPayload({
+      dataUrl: "data:image/png;base64,xyz789",
+    });
+    expect(direct2).toBe("data:image/png;base64,xyz789");
+
+    const direct3 = extractImageFromPayload({
+      file: "data:image/webp;base64,uvw456",
+    });
+    expect(direct3).toBe("data:image/webp;base64,uvw456");
+  });
+
+  it("should extract image from AI SDK experimental_attachments", () => {
+    const payload = {
+      messages: [
+        {
+          role: "user",
+          content: "Please analyze this sheet",
+          experimental_attachments: [
+            {
+              url: "data:image/jpeg;base64,attach123",
+              contentType: "image/jpeg",
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(extractImageFromPayload(payload)).toBe(
+      "data:image/jpeg;base64,attach123"
+    );
+  });
+
+  it("should extract image from AI SDK parts", () => {
+    const payload = {
+      messages: [
+        {
+          role: "user",
+          parts: [
+            { type: "text", text: "Here is the table" },
+            { type: "image", image: "data:image/jpeg;base64,partImage123" },
+          ],
+        },
+      ],
+    };
+
+    expect(extractImageFromPayload(payload)).toBe(
+      "data:image/jpeg;base64,partImage123"
+    );
+  });
+
+  it("should extract image from content array or embedded data URL string", () => {
+    const arrayPayload = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Look" },
+            {
+              type: "image",
+              image_url: { url: "data:image/jpeg;base64,arrayUrl123" },
+            },
+          ],
+        },
+      ],
+    };
+    expect(extractImageFromPayload(arrayPayload)).toBe(
+      "data:image/jpeg;base64,arrayUrl123"
+    );
+
+    const stringPayload = {
+      messages: [
+        {
+          role: "user",
+          content: "Image data:image/png;base64,regexMatch456 embedded here",
+        },
+      ],
+    };
+    expect(extractImageFromPayload(stringPayload)).toBe(
+      "data:image/png;base64,regexMatch456"
+    );
+  });
+
+  it("should return null when no image is present", () => {
+    expect(extractImageFromPayload({})).toBeNull();
+    expect(extractImageFromPayload(null)).toBeNull();
+    expect(
+      extractImageFromPayload({
+        messages: [{ role: "user", content: "Just plain text" }],
+      })
+    ).toBeNull();
+  });
+
+  it("should configure Qwen client with defaults or custom headers", () => {
+    const defaultClient = createQwenClient({});
+    expect(defaultClient.baseURL).toBe(DEFAULT_QWEN_BASE_URL);
+
+    const customClient = createQwenClient({
+      apiKey: "custom-key-123",
+      baseURL: "https://custom.endpoint.com/v1",
+    });
+    expect(customClient.apiKey).toBe("custom-key-123");
+    expect(customClient.baseURL).toBe("https://custom.endpoint.com/v1");
+  });
+});
+
+describe("extractLashingDataFromImage Service", () => {
+  it("should return benchmark report in fallback mode when no API key is provided", async () => {
+    const report = await extractLashingDataFromImage({
+      image: "data:image/jpeg;base64,dummy",
+      mockFallback: true,
+    });
+
+    expect(report.teamName).toBe("E伟捷");
+    expect(report.date).toBe("11月2日");
+    expect(report.voyage).toBe("中远海运欧亚航 V27");
+    expect(report.items).toHaveLength(2);
+    expect(report.items[0]).toEqual({
+      code: "48FR",
+      type: "框架箱",
+      unitCapacity: 3,
+      boxCount: 28,
+    });
+    expect(report.items[1]).toEqual({
+      code: "40FM",
+      type: "斜架箱/框架",
+      unitCapacity: 3,
+      boxCount: 26,
+    });
+    expect(report.totalBoxes).toBe(54);
+    expect(report.totalVehicleUnits).toBe(162);
+    expect(report.calculatedVehicleUnits).toBe(162);
+    expect(report.isValid).toBe(true);
+    expect(report.workerCount).toBe(20);
+    expect(report.leaderSignature).toBe("李春河");
+  });
+
+  it("should invoke custom generator and pass through verifyLashingData", async () => {
+    const mockRaw: RawLashingInput = {
+      teamName: "伟捷",
+      date: "11月3日",
+      voyage: "中远海运星座航 V01",
+      items: [
+        { code: "48FR", type: "框架箱", unitCapacity: 3, boxCount: 10 },
+        { code: "40FM", type: "斜架箱/框架", unitCapacity: 3, boxCount: 20 },
+        { code: "20GP", type: "普箱", unitCapacity: 1, boxCount: 0 }, // Should be filtered out
+      ],
+      totalBoxes: 30,
+      totalVehicleUnits: 90, // 10*3 + 20*3 = 90
+      workerCount: 15,
+      leaderSignature: "张三",
+    };
+
+    const customGenerator = async () => ({
+      object: mockRaw,
+    });
+
+    const report = await extractLashingDataFromImage({
+      image: "data:image/jpeg;base64,custom",
+      apiKey: "test-key",
+      generator: customGenerator,
+    });
+
+    expect(report.teamName).toBe("E伟捷");
+    expect(report.date).toBe("11月3日");
+    expect(report.items).toHaveLength(2);
+    expect(report.calculatedVehicleUnits).toBe(90);
+    expect(report.isValid).toBe(true);
+    expect(report.leaderSignature).toBe("张三");
+  });
+
+  it("should accurately process the real test fixture image file", async () => {
+    const fixturePaths = [
+      "/home/antigravity/ca7321cf10ff8408bf7937f243e78cad.jpg",
+      path.resolve(__dirname, "../../../tests/fixtures/ca7321cf10ff8408bf7937f243e78cad.jpg"),
+    ];
+
+    const fixturePath = fixturePaths.find((p) => fs.existsSync(p));
+    expect(fixturePath).toBeDefined();
+
+    const buffer = fs.readFileSync(fixturePath!);
+    const base64Data = `data:image/jpeg;base64,${buffer.toString("base64")}`;
+
+    const report = await extractLashingDataFromImage({
+      image: base64Data,
+      mockFallback: true,
+    });
+
+    expect(report.teamName).toBe("E伟捷");
+    expect(report.date).toBe("11月2日");
+    expect(report.voyage).toBe("中远海运欧亚航 V27");
+    expect(report.totalBoxes).toBe(54);
+    expect(report.totalVehicleUnits).toBe(162);
+    expect(report.workerCount).toBe(20);
+    expect(report.leaderSignature).toBe("李春河");
+    expect(report.isValid).toBe(true);
+  });
+});

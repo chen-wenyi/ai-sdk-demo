@@ -4,11 +4,11 @@
 
 **Blocked by:** 01: 项目基础骨架与核心领域校验接缝
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance Criteria
 
-- [ ] `/api/chat` 接口支持接收包含图片（Base64 Data URL）的消息负载及用户自定义请求头配置（API Key、Base URL、Model）
-- [ ] 使用 Zod Schema 强类型约束输出结果，过滤非伟捷队伍，只保留伟捷参与绑扎的有效箱型
-- [ ] 对接用户上传的真实测试图片样例（`ca7321cf10ff8408bf7937f243e78cad.jpg`）能够成功解析出完整结构化数据
-- [ ] 解析结果自动透传至 `verifyLashingData` 完成一致性校验并附带校验结果字段返回
+- [x] `/api/chat` 接口支持接收包含图片（Base64 Data URL）的消息负载及用户自定义请求头配置（API Key、Base URL、Model）
+- [x] 使用 Zod Schema 强类型约束输出结果，过滤非伟捷队伍，只保留伟捷参与绑扎的有效箱型
+- [x] 对接用户上传的真实测试图片样例（`ca7321cf10ff8408bf7937f243e78cad.jpg`）能够成功解析出完整结构化数据
+- [x] 解析结果自动透传至 `verifyLashingData` 完成一致性校验并附带校验结果字段返回
