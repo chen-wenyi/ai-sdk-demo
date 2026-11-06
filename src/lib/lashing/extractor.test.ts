@@ -5,6 +5,7 @@ import {
   extractImageFromPayload,
   createQwenClient,
   extractLashingDataFromImage,
+  parseLashingJsonFromText,
   DEFAULT_QWEN_BASE_URL,
 } from "./extractor";
 import { RawLashingInput } from "./types";
@@ -118,6 +119,53 @@ describe("Extractor Utilities", () => {
     });
     expect(customClient.apiKey).toBe("custom-key-123");
     expect(customClient.baseURL).toBe("https://custom.endpoint.com/v1");
+  });
+
+  it("should parse valid JSON from markdown code blocks and coerced string numbers", () => {
+    const rawAiResponse = `
+经过定位分析：
+1. 锁定左侧第2行队伍：E伟捷
+2. 读取到 48FR 绑扎 28 箱，40FM 绑扎 26 箱。
+3. 合计 54 箱，绑扎车装台数 162。
+
+\`\`\`json
+{
+  "teamName": "E伟捷",
+  "date": "11月2日",
+  "voyage": "中远海运欧亚航 V27",
+  "items": [
+    { "code": "48FR", "type": "框架箱", "unitCapacity": "3", "boxCount": "28" },
+    { "code": "40FM", "type": "斜架箱/框架", "unitCapacity": "3", "boxCount": "26" }
+  ],
+  "totalBoxes": "54",
+  "totalVehicleUnits": "162",
+  "workerCount": "20",
+  "leaderSignature": "李春河"
+}
+\`\`\`
+`;
+    const parsed = parseLashingJsonFromText(rawAiResponse);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.teamName).toBe("E伟捷");
+    expect(parsed?.totalBoxes).toBe(54);
+    expect(parsed?.totalVehicleUnits).toBe(162);
+    expect(parsed?.items[0].boxCount).toBe(28);
+    expect(parsed?.items[1].boxCount).toBe(26);
+    expect(parsed?.leaderSignature).toBe("李春河");
+  });
+
+  it("should parse outer curly braces without markdown code block", () => {
+    const textWithBraces = `分析完成：{"teamName":"E伟捷","date":"11月2日","voyage":"测试航次","items":[{"code":"48FR","type":"框架箱","unitCapacity":3,"boxCount":28}],"totalBoxes":28,"totalVehicleUnits":84,"workerCount":10,"leaderSignature":"李春河"} 以上为识别结果。`;
+    const parsed = parseLashingJsonFromText(textWithBraces);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.teamName).toBe("E伟捷");
+    expect(parsed?.totalBoxes).toBe(28);
+  });
+
+  it("should return null on invalid JSON or unparseable text", () => {
+    expect(parseLashingJsonFromText("这是一段没有任何 JSON 的文本")).toBeNull();
+    expect(parseLashingJsonFromText("```json { invalid json } ```")).toBeNull();
+    expect(parseLashingJsonFromText("")).toBeNull();
   });
 });
 

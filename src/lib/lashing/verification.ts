@@ -16,7 +16,10 @@ export function normalizeTeamName(rawTeamName: string): string {
  * Filters non-zero items, calculates vehicle units from coefficients,
  * verifies internal consistency, and produces structured report.
  */
-export function verifyLashingData(input: RawLashingInput): WeijieLashingReport {
+export function verifyLashingData(
+  input: RawLashingInput,
+  reasoning?: string
+): WeijieLashingReport {
   const teamName = normalizeTeamName(input.teamName);
 
   // Filter items: only include active作業箱型 (boxCount > 0)
@@ -77,5 +80,6 @@ export function verifyLashingData(input: RawLashingInput): WeijieLashingReport {
     isValid,
     discrepancyMessage,
     isHumanVerified: input.isHumanVerified,
+    reasoning,
   };
 }

@@ -163,8 +163,9 @@ export default function Home() {
             onSubmit={handleSendMessage}
             isLoading={isLoading}
           />
-          <div className="text-center pt-2 text-[11px] text-muted-foreground/70">
-            港口绑扎智能助手 · 遵循 shadcn AI Elements 交互规范与 Zod 结构化契约
+          <div className="text-center pt-2 text-[11px] text-muted-foreground/70 flex flex-col items-center gap-0.5">
+            <span>💡 拍照提示：尽量让表格铺满镜头并扶正（避免过多桌面阴影）；若数字密集，推荐在顶部切换为 <b>Qwen VL OCR</b> 模型</span>
+            <span className="text-[10px] text-muted-foreground/50">港口绑扎智能助手 · 遵循 shadcn AI Elements 交互规范与 Zod 结构化契约</span>
           </div>
         </div>
       </main>

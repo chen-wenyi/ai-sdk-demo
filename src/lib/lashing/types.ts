@@ -3,8 +3,8 @@ import { z } from "zod";
 export const LashingItemSchema = z.object({
   code: z.string().describe("箱型代码，如 48FR, 40FM"),
   type: z.string().describe("箱型分类名称，如 框架箱, 斜架箱/框架"),
-  unitCapacity: z.number().describe("单箱台数"),
-  boxCount: z.number().describe("绑扎箱数"),
+  unitCapacity: z.coerce.number().describe("单箱台数"),
+  boxCount: z.coerce.number().describe("绑扎箱数"),
 });
 
 export type LashingItem = z.infer<typeof LashingItemSchema>;
@@ -14,9 +14,9 @@ export const RawLashingInputSchema = z.object({
   date: z.string().default(""),
   voyage: z.string().default(""),
   items: z.array(LashingItemSchema).default([]),
-  totalBoxes: z.number().default(0),
-  totalVehicleUnits: z.number().default(0),
-  workerCount: z.number().default(0),
+  totalBoxes: z.coerce.number().default(0),
+  totalVehicleUnits: z.coerce.number().default(0),
+  workerCount: z.coerce.number().default(0),
   leaderSignature: z.string().default(""),
   isHumanVerified: z.boolean().optional(),
 });
@@ -37,6 +37,7 @@ export const WeijieLashingReportSchema = z.object({
   isValid: z.boolean(),
   discrepancyMessage: z.string().optional(),
   isHumanVerified: z.boolean().optional(),
+  reasoning: z.string().optional(),
 });
 
 export type WeijieLashingReport = z.infer<typeof WeijieLashingReportSchema>;

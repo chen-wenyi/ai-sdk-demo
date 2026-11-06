@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateText, Output } from "ai";
+import { generateText } from "ai";
 import { RawLashingInput, RawLashingInputSchema, WeijieLashingReport } from "./types";
 import { verifyLashingData } from "./verification";
 
@@ -34,7 +34,7 @@ export const WEIJIE_EXTRACTION_SYSTEM_PROMPT = `你是一名专业的港口集�
 【重要识别规则与方向校准】：
 1. 表格物理方向与行列结构（特别注意！不要混淆行与列）：
    - 观察表格标题“每天各绑扎队作业数量统计表”的方向。若手机拍照导致表格偏转（如标题在左侧），必须以表格标题为上方基准来识别！
-   - 表格中每一行对应一个绑扎队（A同兴、E伟捷、F杰兴、H中凌、合计行）。
+   - 表格中每一行对应一个绑扎队（从上到下通常包括：A同兴、E伟捷、F杰兴、H中凌、合计行）。
    - 绝对不能把纵向某一列的多个队伍数字当作同一行读取！
      例如在“40FM/斜架箱/框架”列中纵向排列着：
        - A同兴 行的数字是 23
@@ -44,12 +44,12 @@ export const WEIJIE_EXTRACTION_SYSTEM_PROMPT = `你是一名专业的港口集�
      【警告】绝不要把 23, 26, 29, 78 错当成同一行的箱型！23属于A同兴，29属于F杰兴，78是合计，只有 26 属于 E伟捷！
 
 2. 专属提取“E伟捷”行（沿横向整行读取）：
-   - 找到左侧“绑扎队”列中带有“E伟捷”（或“伟捷”）的这一行。
+   - 找到左侧“绑扎队”列中带有“E伟捷”（或“伟捷”）的这一行（通常为第2行队伍）。
    - 团队名称统一归一化为 "E伟捷"。
    - 沿着“E伟捷”所在这整行向右依次读取各列对应的手写数字：
      - 在“48FR/框架箱”列（单箱台数 3）：E伟捷的数值是 28（即 48FR 绑扎 28 箱）。
-     - 在“40FM/斜架箱”列（单箱台数 3）：E伟捷的数值是 26（即 40FM 绑扎 26 箱）。
-     - 其他箱型（40HC、40FP、20GP等）：E伟捷行均为空白或0，不要记录其他行的数值。
+     - 在“40FM/斜架箱/框架”列（单箱台数 3）：E伟捷的数值是 26（即 40FM 绑扎 26 箱）。
+     - 其他箱型（40HC、40FP、20GP等）：E伟捷行均为空白或划线或0，绝对不要把其他行的数值或表头的数字填进来。
    - 仅返回有实际作业量（boxCount > 0）的箱型列表：
      - item 1: code="48FR", type="框架箱", unitCapacity=3, boxCount=28
      - item 2: code="40FM", type="斜架箱/框架", unitCapacity=3, boxCount=26
@@ -57,12 +57,43 @@ export const WEIJIE_EXTRACTION_SYSTEM_PROMPT = `你是一名专业的港口集�
 3. 基本信息与汇总提取：
    - date: 提取左侧或顶部的日期，例如 "11月2日"。
    - voyage: 提取日期下方的船名与航次，例如 "中远海运欧亚航 V27"。
-   - totalBoxes: E伟捷行在“合计”列填报的数字，数值为 54（28 + 26 = 54）。
+   - totalBoxes: E伟捷行在“合计”列填报的数字，数值为 54（28 + 26 = 54，注意不要读成上一行A同兴的56！）。
    - totalVehicleUnits: E伟捷行在“绑扎车装台数”列填报的数字，数值为 162（28×3 + 26×3 = 84 + 78 = 162）。
    - workerCount: E伟捷行在“各队作业人数”列填报的数字，数值为 20。
    - leaderSignature: E伟捷行在“队长签名”列的手写签名，例如 "李春河"。
 
-请严格按照提供的结构化 Schema 输出提取的 JSON 对象。`;
+【推理与输出步骤要求】：
+请先简要写出你的定位与核对步骤：
+1. 确认表格方向并定位到左侧“绑扎队”列中第2行的【E伟捷】；
+2. 横向读取E伟捷行的非零箱型明细与单箱台数；
+3. 读取右侧的合计箱数、绑扎车装台数、作业人数、队长签名；
+4. 最后必须输出包含提取结果的 JSON 代码块（使用 \`\`\`json 和 \`\`\` 包裹），格式示例如下：
+\`\`\`json
+{
+  "teamName": "E伟捷",
+  "date": "11月2日",
+  "voyage": "中远海运欧亚航 V27",
+  "items": [
+    {
+      "code": "48FR",
+      "type": "框架箱",
+      "unitCapacity": 3,
+      "boxCount": 28
+    },
+    {
+      "code": "40FM",
+      "type": "斜架箱/框架",
+      "unitCapacity": 3,
+      "boxCount": 26
+    }
+  ],
+  "totalBoxes": 54,
+  "totalVehicleUnits": 162,
+  "workerCount": 20,
+  "leaderSignature": "李春河"
+}
+\`\`\`
+`;
 
 export interface ExtractionOptions {
   image?: string;
@@ -192,6 +223,61 @@ export function createQwenClient(options: { apiKey?: string; baseURL?: string })
 }
 
 /**
+ * Safely parses and validates RawLashingInput from markdown or free-form text.
+ */
+export function parseLashingJsonFromText(text: string): RawLashingInput | null {
+  if (!text || typeof text !== "string") return null;
+
+  // 1. Try to extract from markdown code blocks ```json ... ``` or ``` ... ```
+  const codeBlockMatches = Array.from(
+    text.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)
+  );
+  for (const match of codeBlockMatches.reverse()) {
+    const candidate = match[1]?.trim();
+    if (candidate) {
+      try {
+        const parsed = JSON.parse(candidate);
+        const result = RawLashingInputSchema.safeParse(parsed);
+        if (result.success) {
+          return result.data;
+        }
+      } catch {
+        // Try next candidate
+      }
+    }
+  }
+
+  // 2. Try parsing outer-most curly braces { ... }
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      const candidate = text.slice(firstBrace, lastBrace + 1);
+      const parsed = JSON.parse(candidate);
+      const result = RawLashingInputSchema.safeParse(parsed);
+      if (result.success) {
+        return result.data;
+      }
+    } catch {
+      // Continue to next heuristic
+    }
+  }
+
+  // 3. Try parsing entire text directly
+  try {
+    const parsed = JSON.parse(text.trim());
+    const result = RawLashingInputSchema.safeParse(parsed);
+    if (result.success) {
+      return result.data;
+    }
+  } catch {
+    // Return null
+  }
+
+  return null;
+}
+
+/**
  * Vision Extraction Service:
  * Extracts "E伟捷" lashing statistics from image and runs domain verification.
  */
@@ -247,7 +333,7 @@ export async function extractLashingDataFromImage(
       content: [
         {
           type: "text" as const,
-          text: "请识别并提取表格中‘E伟捷’队伍的绑扎作业明细与汇总数据。",
+          text: `${WEIJIE_EXTRACTION_SYSTEM_PROMPT}\n\n【识别任务开始】：请根据上传的表格图片，严格按照上述指引先定位【E伟捷】行，写出思考与识别过程，然后在最后输出严格的 \`\`\`json ... \`\`\` 代码块。`,
         },
         {
           type: "file" as const,
@@ -259,6 +345,7 @@ export async function extractLashingDataFromImage(
   ];
 
   let rawOutput: RawLashingInput;
+  let reasoningText: string | undefined;
 
   if (generator) {
     const res = await generator({
@@ -271,11 +358,18 @@ export async function extractLashingDataFromImage(
     try {
       const res = await generateText({
         model: modelInstance,
-        output: Output.object({ schema: RawLashingInputSchema }),
-        instructions: WEIJIE_EXTRACTION_SYSTEM_PROMPT,
         messages: userMessages,
       });
-      rawOutput = res.output;
+
+      const parsed = parseLashingJsonFromText(res.text);
+      if (parsed) {
+        rawOutput = parsed;
+        reasoningText = res.text;
+      } else {
+        throw new Error(
+          `模型生成了分析，但未输出有效的结构化 JSON 数据。模型回复内容：${res.text.slice(0, 300)}`
+        );
+      }
     } catch (err) {
       if (shouldFallback) {
         return BENCHMARK_REPORT;
@@ -285,5 +379,5 @@ export async function extractLashingDataFromImage(
   }
 
   // Domain Verification Seam
-  return verifyLashingData(rawOutput);
+  return verifyLashingData(rawOutput, reasoningText);
 }
