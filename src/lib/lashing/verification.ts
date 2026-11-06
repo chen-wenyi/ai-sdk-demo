@@ -3,6 +3,7 @@ import {
   WeijieLashingReport,
   LashingItem,
   LashingTokenUsage,
+  ReverseVerificationState,
 } from "./types";
 
 /**
@@ -24,7 +25,8 @@ export function normalizeTeamName(rawTeamName: string): string {
 export function verifyLashingData(
   input: RawLashingInput,
   durationMs?: number,
-  tokenUsage?: LashingTokenUsage
+  tokenUsage?: LashingTokenUsage,
+  reverseVerification?: ReverseVerificationState
 ): WeijieLashingReport {
   const teamName = normalizeTeamName(input.teamName);
 
@@ -88,5 +90,6 @@ export function verifyLashingData(
     isHumanVerified: input.isHumanVerified,
     durationMs,
     tokenUsage,
+    reverseVerification,
   };
 }

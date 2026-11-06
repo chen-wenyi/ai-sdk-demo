@@ -7,6 +7,7 @@ import {
   extractLashingDataFromImage,
   parseLashingJsonFromText,
   extractDashScopeUsage,
+  reverseVerifyLashingData,
   DEFAULT_QWEN_BASE_URL,
 } from "./extractor";
 import { RawLashingInput } from "./types";
@@ -339,5 +340,72 @@ describe("extractLashingDataFromImage Service", () => {
     expect(report.calculatedVehicleUnits).toBe(162);
     expect(report.isValid).toBe(true);
   });
+
+  it("should execute reverseVerifyLashingData in fallback and custom generator modes", async () => {
+    const fallbackRev = await reverseVerifyLashingImageFallback();
+    expect(fallbackRev.status).toBe("passed");
+    expect(fallbackRev.isMatched).toBe(true);
+
+    const mismatchRev = await reverseVerifyLashingData({
+      image: "data:image/jpeg;base64,custom",
+      apiKey: "test-key",
+      extractedReport: {
+        teamName: "E伟捷",
+        date: "10月14日",
+        voyage: "GREEN KOTKA V18",
+        items: [{ code: "48FR", type: "框架箱", unitCapacity: 2, boxCount: 8 }],
+        totalBoxes: 8,
+        totalVehicleUnits: 16,
+        workerCount: 12,
+        leaderSignature: "郭相师",
+      },
+      generator: async () => ({
+        object: {
+          isMatched: false,
+          summary: "手写班组长签字笔画复核为“郭相帅”",
+          discrepancies: [
+            {
+              field: "leaderSignature",
+              expectedByFirstPass: "郭相师",
+              foundInSecondPass: "郭相帅",
+              reason: "末字为帅而非师",
+            },
+          ],
+          correctedData: {
+            teamName: "E伟捷",
+            date: "10月14日",
+            voyage: "GREEN KOTKA V18",
+            items: [{ code: "48FR", type: "框架箱", unitCapacity: 2, boxCount: 8 }],
+            totalBoxes: 8,
+            totalVehicleUnits: 16,
+            workerCount: 12,
+            leaderSignature: "郭相帅",
+          },
+        },
+      }),
+    });
+
+    expect(mismatchRev.status).toBe("mismatch");
+    expect(mismatchRev.isMatched).toBe(false);
+    expect(mismatchRev.discrepancies).toHaveLength(1);
+    expect(mismatchRev.correctedData?.leaderSignature).toBe("郭相帅");
+  });
 });
+
+async function reverseVerifyLashingImageFallback() {
+  return reverseVerifyLashingData({
+    image: "data:image/jpeg;base64,dummy",
+    mockFallback: true,
+    extractedReport: {
+      teamName: "E伟捷",
+      date: "11月2日",
+      voyage: "中远海运欧亚航 V27",
+      items: [{ code: "48FR", type: "框架箱", unitCapacity: 3, boxCount: 28 }],
+      totalBoxes: 28,
+      totalVehicleUnits: 84,
+      workerCount: 20,
+      leaderSignature: "李春河",
+    },
+  });
+}
 

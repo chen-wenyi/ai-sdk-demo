@@ -102,19 +102,24 @@ export default function Home() {
 
         const rawReport: WeijieLashingReport = data.report || data;
         const durationMs = rawReport.durationMs || clientElapsedMs;
+        const assistantMsgId = `assistant-${Date.now()}`;
         const report: WeijieLashingReport = {
           ...rawReport,
           durationMs,
+          reverseVerification: {
+            status: "verifying",
+            discrepancies: [],
+          },
         };
 
         const assistantMessage: ChatMessage = {
-          id: `assistant-${Date.now()}`,
+          id: assistantMsgId,
           role: "assistant",
           content: `已成功定位并提取【${report.teamName || "E伟捷"}】行绑扎数据（耗时 ${(
             durationMs / 1000
-          ).toFixed(2)}s），一致性比对${
+          ).toFixed(2)}s），算术比对${
             report.isValid ? "一致（校验通过）" : "存在偏差，请确认"
-          }：`,
+          }，正在启动大模型二次反向视觉核对：`,
           report,
           durationMs,
           tokenUsage: report.tokenUsage,
@@ -122,6 +127,89 @@ export default function Home() {
         };
 
         setMessages((prev) => [...prev, assistantMessage]);
+        setIsLoading(false);
+
+        // Stage 2: Asynchronous Reverse Verification with LLM
+        void (async () => {
+          try {
+            const verifyRes = await fetch("/api/chat", {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                mode: "reverse_verify",
+                image: imageAttachment || "",
+                extractedReport: rawReport,
+                apiKey: settings.apiKey || undefined,
+                baseURL: settings.baseURL || undefined,
+                model: settings.model || undefined,
+                mockFallback: settings.mockFallback,
+              }),
+            });
+            const verifyData = await verifyRes.json();
+            if (verifyRes.ok && verifyData.reverseVerification) {
+              const rev = verifyData.reverseVerification;
+              setMessages((prev) =>
+                prev.map((msg) => {
+                  if (msg.id !== assistantMsgId || !msg.report) return msg;
+                  return {
+                    ...msg,
+                    content: `已成功定位并提取【${msg.report.teamName || "E伟捷"}】行绑扎数据（首轮耗时 ${(
+                      durationMs / 1000
+                    ).toFixed(2)}s），算术比对${
+                      msg.report.isValid ? "一致" : "存在偏差"
+                    }，二次反向核对${
+                      rev.status === "passed"
+                        ? "一致（通过）"
+                        : rev.status === "mismatch"
+                        ? "发现潜在差异"
+                        : "已完成"
+                    }：`,
+                    report: {
+                      ...msg.report,
+                      reverseVerification: rev,
+                    },
+                  };
+                })
+              );
+            } else {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMsgId && msg.report
+                    ? {
+                        ...msg,
+                        report: {
+                          ...msg.report,
+                          reverseVerification: {
+                            status: "error",
+                            summary: verifyData?.error || "二次反向核对未完成",
+                            discrepancies: [],
+                          },
+                        },
+                      }
+                    : msg
+                )
+              );
+            }
+          } catch {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMsgId && msg.report
+                  ? {
+                      ...msg,
+                      report: {
+                        ...msg.report,
+                        reverseVerification: {
+                          status: "error",
+                          summary: "二次反向验证网络请求异常",
+                          discrepancies: [],
+                        },
+                      },
+                    }
+                  : msg
+              )
+            );
+          }
+        })();
       } catch (err: unknown) {
         const clientElapsedMs = Math.max(1, Date.now() - clientStart);
         const message =

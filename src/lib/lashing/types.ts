@@ -32,6 +32,45 @@ export const LashingTokenUsageSchema = z.object({
 
 export type LashingTokenUsage = z.infer<typeof LashingTokenUsageSchema>;
 
+export const ReverseDiscrepancySchema = z.object({
+  field: z
+    .string()
+    .describe("存在差异的字段名，如 48FR.boxCount, totalBoxes, workerCount, leaderSignature"),
+  expectedByFirstPass: z.string().describe("首轮提取的值"),
+  foundInSecondPass: z.string().describe("二次反向核对在原图中看到的真实值"),
+  reason: z.string().describe("差异原因说明，如串行误读、漏读非零列、手写笔画差异等"),
+});
+
+export type ReverseDiscrepancy = z.infer<typeof ReverseDiscrepancySchema>;
+
+export const ReverseVerificationRawSchema = z.object({
+  isMatched: z
+    .boolean()
+    .describe("二次反向视觉核对结果是否与首轮提取的 JSON 完全一致"),
+  summary: z.string().describe("简明扼要的二次反向核对结论说明"),
+  discrepancies: z
+    .array(ReverseDiscrepancySchema)
+    .default([])
+    .describe("若存在不一致，列出所有差异字段；若完全一致则为空数组"),
+  correctedData: RawLashingInputSchema.optional().describe(
+    "若发现差异，提供二次修正后的完整 E伟捷 行数据"
+  ),
+});
+
+export type ReverseVerificationRaw = z.infer<typeof ReverseVerificationRawSchema>;
+
+export const ReverseVerificationStateSchema = z.object({
+  status: z.enum(["idle", "verifying", "passed", "mismatch", "error"]),
+  isMatched: z.boolean().optional(),
+  summary: z.string().optional(),
+  discrepancies: z.array(ReverseDiscrepancySchema).default([]),
+  correctedData: RawLashingInputSchema.optional(),
+  durationMs: z.number().optional(),
+  tokenUsage: LashingTokenUsageSchema.optional(),
+});
+
+export type ReverseVerificationState = z.infer<typeof ReverseVerificationStateSchema>;
+
 export const WeijieLashingReportSchema = z.object({
   teamName: z.string(),
   date: z.string(),
@@ -48,6 +87,7 @@ export const WeijieLashingReportSchema = z.object({
   isHumanVerified: z.boolean().optional(),
   durationMs: z.number().optional(),
   tokenUsage: LashingTokenUsageSchema.optional(),
+  reverseVerification: ReverseVerificationStateSchema.optional(),
 });
 
 export type WeijieLashingReport = z.infer<typeof WeijieLashingReportSchema>;

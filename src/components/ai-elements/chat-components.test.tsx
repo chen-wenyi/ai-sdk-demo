@@ -124,4 +124,63 @@ describe("Chat Components Integration", () => {
     expect(html).toContain('data-testid="token-usage-badge"');
     expect(html).toContain("全部 Token 3386 · 输入 3196 (图片 1902) · 输出 190");
   });
+
+  it("should render reverse verification states (verifying, passed, mismatch) in card", () => {
+    const verifyingMessages: ChatMessage[] = [
+      {
+        id: "msg-rev-1",
+        role: "assistant",
+        content: "正在二次核对：",
+        report: {
+          ...benchmarkReport,
+          reverseVerification: {
+            status: "verifying",
+            discrepancies: [],
+          },
+        },
+      },
+    ];
+    const htmlVerifying = renderToString(
+      <ChatMessageList messages={verifyingMessages} isLoading={false} />
+    );
+    expect(htmlVerifying).toContain('data-testid="reverse-verify-badge"');
+    expect(htmlVerifying).toContain("二次验证中...");
+    expect(htmlVerifying).toContain('data-testid="reverse-verify-banner"');
+
+    const mismatchMessages: ChatMessage[] = [
+      {
+        id: "msg-rev-2",
+        role: "assistant",
+        content: "二次核对发现差异：",
+        report: {
+          ...benchmarkReport,
+          reverseVerification: {
+            status: "mismatch",
+            isMatched: false,
+            summary: "班组长签字存在差异",
+            discrepancies: [
+              {
+                field: "leaderSignature",
+                expectedByFirstPass: "郭相师",
+                foundInSecondPass: "郭相帅",
+                reason: "末字为帅",
+              },
+            ],
+            correctedData: {
+              ...benchmarkReport,
+              leaderSignature: "郭相帅",
+            },
+            durationMs: 4120,
+          },
+        },
+      },
+    ];
+    const htmlMismatch = renderToString(
+      <ChatMessageList messages={mismatchMessages} isLoading={false} />
+    );
+    expect(htmlMismatch).toContain("二次验证发现差异");
+    expect(htmlMismatch).toContain('data-testid="btn-apply-reverse-correction"');
+    expect(htmlMismatch).toContain("一键采纳二次复核结果");
+    expect(htmlMismatch).toContain("郭相帅");
+  });
 });

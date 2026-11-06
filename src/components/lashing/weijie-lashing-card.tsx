@@ -34,6 +34,7 @@ import {
   Plus,
   RefreshCw,
   Clock,
+  ShieldCheck,
 } from "lucide-react";
 
 export interface WeijieLashingCardProps {
@@ -51,6 +52,7 @@ export function WeijieLashingCard({
 }: WeijieLashingCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [reverseElapsedMs, setReverseElapsedMs] = useState(0);
   const [localHumanVerified, setLocalHumanVerified] = useState(
     () => Boolean(report.isHumanVerified ?? isVerified)
   );
@@ -65,6 +67,20 @@ export function WeijieLashingCard({
     leaderSignature: report.leaderSignature,
     isHumanVerified: report.isHumanVerified ?? isVerified,
   }));
+
+  // Live timer while secondary reverse verification is running
+  const isReverseVerifying = report.reverseVerification?.status === "verifying";
+  useEffect(() => {
+    if (!isReverseVerifying) {
+      setReverseElapsedMs(0);
+      return;
+    }
+    const start = Date.now();
+    const timer = setInterval(() => {
+      setReverseElapsedMs(Date.now() - start);
+    }, 100);
+    return () => clearInterval(timer);
+  }, [isReverseVerifying]);
 
   // Synchronize draft when report changes externally while not editing
   useEffect(() => {
@@ -137,7 +153,8 @@ export function WeijieLashingCard({
         isHumanVerified: true,
       },
       report.durationMs,
-      report.tokenUsage
+      report.tokenUsage,
+      report.reverseVerification
     );
 
     setIsEditing(false);
@@ -151,6 +168,28 @@ export function WeijieLashingCard({
       isHumanVerified: true,
     };
     onUpdateReport?.(verified);
+  };
+
+  const handleApplyReverseCorrection = () => {
+    const corrected = report.reverseVerification?.correctedData;
+    if (!corrected) return;
+    setLocalHumanVerified(true);
+    const updated = verifyLashingData(
+      {
+        ...corrected,
+        isHumanVerified: true,
+      },
+      report.durationMs,
+      report.tokenUsage,
+      {
+        ...report.reverseVerification!,
+        status: "passed",
+        isMatched: true,
+        summary: "已采纳二次反向核对修正结果并完成人工确认。",
+        discrepancies: [],
+      }
+    );
+    onUpdateReport?.(updated);
   };
 
   // Sync draft totals with live calculated values
@@ -389,6 +428,45 @@ export function WeijieLashingCard({
                   </Badge>
                 )}
 
+                {report.reverseVerification?.status === "verifying" && (
+                  <Badge
+                    data-testid="reverse-verify-badge"
+                    variant="outline"
+                    className="border-blue-500/50 text-blue-600 dark:text-blue-400 bg-blue-500/10 font-medium text-xs px-2 py-0.5 flex items-center gap-1"
+                  >
+                    <RefreshCw className="size-3 animate-spin text-blue-600 dark:text-blue-400" />
+                    <span>{`二次验证中... ${(reverseElapsedMs / 1000).toFixed(1)}s`}</span>
+                  </Badge>
+                )}
+
+                {report.reverseVerification?.status === "passed" && (
+                  <Badge
+                    data-testid="reverse-verify-badge"
+                    variant="outline"
+                    className="border-emerald-600/50 text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 font-medium text-xs px-2 py-0.5 flex items-center gap-1"
+                  >
+                    <ShieldCheck className="size-3 text-emerald-600 dark:text-emerald-400" />
+                    <span>
+                      {`二次验证一致${
+                        typeof report.reverseVerification.durationMs === "number"
+                          ? ` (${(report.reverseVerification.durationMs / 1000).toFixed(2)}s)`
+                          : ""
+                      }`}
+                    </span>
+                  </Badge>
+                )}
+
+                {report.reverseVerification?.status === "mismatch" && (
+                  <Badge
+                    data-testid="reverse-verify-badge"
+                    variant="outline"
+                    className="border-amber-500/60 text-amber-700 dark:text-amber-400 bg-amber-500/15 font-medium text-xs px-2 py-0.5 flex items-center gap-1"
+                  >
+                    <AlertTriangle className="size-3 text-amber-600 dark:text-amber-400" />
+                    <span>二次验证发现差异</span>
+                  </Badge>
+                )}
+
                 {!isHumanVerified && (
                   <Button
                     data-testid="btn-confirm-verify"
@@ -444,6 +522,104 @@ export function WeijieLashingCard({
           </div>
         </div>
       </CardHeader>
+
+      {/* Secondary Reverse Verification Banner */}
+      {!isEditing && report.reverseVerification && report.reverseVerification.status !== "idle" && (
+        <div
+          data-testid="reverse-verify-banner"
+          className={cn(
+            "px-4 py-2 border-b text-xs flex flex-col gap-1.5 transition-colors",
+            report.reverseVerification.status === "verifying" &&
+              "bg-blue-500/10 border-blue-500/20 text-blue-700 dark:text-blue-300",
+            report.reverseVerification.status === "passed" &&
+              "bg-emerald-500/8 border-emerald-500/20 text-emerald-800 dark:text-emerald-300",
+            report.reverseVerification.status === "mismatch" &&
+              "bg-amber-500/12 border-amber-500/30 text-amber-800 dark:text-amber-200",
+            report.reverseVerification.status === "error" &&
+              "bg-muted/50 border-border/50 text-muted-foreground"
+          )}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 font-medium">
+              {report.reverseVerification.status === "verifying" && (
+                <>
+                  <RefreshCw className="size-3.5 animate-spin shrink-0 text-blue-600 dark:text-blue-400" />
+                  <span>
+                    {`正在将首轮 JSON 与原图“E伟捷”行进行大模型二次反向视觉核对... (${(
+                      reverseElapsedMs / 1000
+                    ).toFixed(1)}s)`}
+                  </span>
+                </>
+              )}
+              {report.reverseVerification.status === "passed" && (
+                <>
+                  <ShieldCheck className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span>
+                    {report.reverseVerification.summary ||
+                      "二次反向视觉核对通过：行列位置、打印箱数、系数及手写签名均与原图一致。"}
+                  </span>
+                </>
+              )}
+              {report.reverseVerification.status === "mismatch" && (
+                <>
+                  <AlertTriangle className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    {`二次反向核对发现潜在差异：${
+                      report.reverseVerification.summary || "请核对以下字段"
+                    }`}
+                  </span>
+                </>
+              )}
+              {report.reverseVerification.status === "error" && (
+                <span>
+                  {report.reverseVerification.summary || "二次反向核对未完成"}
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {typeof report.reverseVerification.durationMs === "number" && (
+                <span className="font-mono text-[11px] opacity-80">
+                  {`复核耗时 ${(report.reverseVerification.durationMs / 1000).toFixed(2)}s`}
+                </span>
+              )}
+              {report.reverseVerification.tokenUsage && (
+                <span
+                  data-testid="reverse-verify-token-usage"
+                  className="font-mono text-[11px] opacity-80"
+                >
+                  {`· 复核 Token ${report.reverseVerification.tokenUsage.totalTokens}`}
+                </span>
+              )}
+              {report.reverseVerification.status === "mismatch" &&
+                report.reverseVerification.correctedData && (
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    data-testid="btn-apply-reverse-correction"
+                    onClick={handleApplyReverseCorrection}
+                    className="h-6 text-[11px] bg-background/90 hover:bg-background border-amber-500/50 text-amber-900 dark:text-amber-200 font-medium"
+                  >
+                    <Check className="size-3 mr-1 text-emerald-600" />
+                    一键采纳二次复核结果
+                  </Button>
+                )}
+            </div>
+          </div>
+
+          {report.reverseVerification.status === "mismatch" &&
+            report.reverseVerification.discrepancies.length > 0 && (
+              <div className="flex flex-col gap-1 pl-5 pt-0.5 text-[11px]">
+                {report.reverseVerification.discrepancies.map((d, idx) => (
+                  <div key={`rev-diff-${idx}`} className="font-mono">
+                    {`• [${d.field}] 首轮提取: "${d.expectedByFirstPass}" → 二次复核: "${d.foundInSecondPass}" (${d.reason})`}
+                  </div>
+                ))}
+              </div>
+            )}
+        </div>
+      )}
 
       {/* Discrepancy & Live Calculation Alerts */}
       {isEditing ? (

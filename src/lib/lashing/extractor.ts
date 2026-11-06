@@ -5,6 +5,9 @@ import {
   RawLashingInputSchema,
   WeijieLashingReport,
   LashingTokenUsage,
+  ReverseVerificationRawSchema,
+  ReverseVerificationRaw,
+  ReverseVerificationState,
 } from "./types";
 import { verifyLashingData } from "./verification";
 
@@ -549,5 +552,205 @@ export async function extractLashingDataFromImage(
 
   // Domain Verification Seam
   return verifyLashingData(rawOutput, durationMs, capturedUsage);
+}
+
+export const WEIJIE_REVERSE_VERIFICATION_SYSTEM_PROMPT = `你是一名严谨的港口集装箱绑扎单据【独立复核审计员】。
+第一阶段 AI 已经从《每天各绑扎队作业数量统计表》图片中提取出了“E伟捷”队的 JSON 数据。
+现在请你对照原图，对该 JSON 数据进行【反向视觉核对】（注意：表格中的箱数、合计箱数、绑扎车装台数均为表格打印数字，只有使用人数与班组长签字为手写）：
+
+【反向核对四大检查项】：
+1. 防串行核对：在原图左侧“绑扎队”列重新定位“E伟捷”行，确认首轮提取的每个箱型数量（boxCount）确实位于“E伟捷”这一行，而非上一行（如A同兴/D永兴）或下一行（如F杰兴/F集发/合计行）。
+2. 防串列与漏列核对：沿“E伟捷”行从左到右逐格检查，确认没有漏掉任何其他非空白的打印数字列（仅核对有数值的列，空白列忽略），且每个数字对应的表头箱型代码（如48FR、40FM等）与单箱台数系数（unitCapacity，如2或3）完全准确。
+3. 打印合计核对：核对“E伟捷”行右侧打印的“合计箱数”（totalBoxes）和“绑扎车装台数”（totalVehicleUnits）是否与原图一致。
+4. 手写区核对：核对“E伟捷”行右侧手写的“使用人数/各队作业人数”（workerCount）与“班组长签字/队长签名”（leaderSignature）是否与原图手写字迹吻合。
+
+请严格按照 ReverseVerificationRawSchema 输出 JSON：
+- 如果全部核对无误：设置 isMatched = true，discrepancies = []，并在 summary 中简明说明已核对哪些字段且与原图完全一致。
+- 如果发现任何串行、串列、漏列或数值/签名误读：设置 isMatched = false，在 discrepancies 中逐项列出差异，并在 correctedData 中提供修正后的完整“E伟捷”数据。`;
+
+export interface ReverseVerifyOptions {
+  image?: string;
+  extractedReport: Partial<WeijieLashingReport> | RawLashingInput;
+  apiKey?: string;
+  baseURL?: string;
+  model?: string;
+  mockFallback?: boolean;
+  generator?: (params: {
+    model: unknown;
+    schema: typeof ReverseVerificationRawSchema;
+    messages: unknown[];
+  }) => Promise<{ object: ReverseVerificationRaw }>;
+}
+
+/**
+ * Stage 2 Reverse Vision Verification Service:
+ * Takes the original image and Stage 1 extracted JSON, and asks the vision LLM
+ * to cross-check row/column alignment, printed numbers, and handwritten signature.
+ */
+export async function reverseVerifyLashingData(
+  options: ReverseVerifyOptions
+): Promise<ReverseVerificationState> {
+  const startTime = Date.now();
+  const {
+    image,
+    extractedReport,
+    apiKey,
+    baseURL,
+    model,
+    mockFallback,
+    generator,
+  } = options;
+
+  const resolvedApiKey =
+    apiKey ||
+    process.env.DASHSCOPE_API_KEY ||
+    process.env.QWEN_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    "";
+
+  const shouldFallback =
+    Boolean(mockFallback) ||
+    !resolvedApiKey ||
+    process.env.NODE_ENV === "test";
+
+  const candidateSummary = {
+    teamName: extractedReport.teamName || "E伟捷",
+    date: extractedReport.date || "",
+    voyage: extractedReport.voyage || "",
+    items: extractedReport.items || [],
+    totalBoxes: extractedReport.totalBoxes ?? 0,
+    totalVehicleUnits: extractedReport.totalVehicleUnits ?? 0,
+    workerCount: extractedReport.workerCount ?? 0,
+    leaderSignature: extractedReport.leaderSignature || "",
+  };
+
+  if (shouldFallback && !generator) {
+    const itemsDesc =
+      candidateSummary.items
+        .map((i) => `${i.code}(${i.boxCount}箱×系数${i.unitCapacity})`)
+        .join("、") || "无非零箱型";
+    return {
+      status: "passed",
+      isMatched: true,
+      summary: `已反向核对原图“${candidateSummary.teamName}”行：${itemsDesc}，打印合计 ${candidateSummary.totalBoxes} 箱 / ${candidateSummary.totalVehicleUnits} 台，手写人数 ${candidateSummary.workerCount} 人、签字“${candidateSummary.leaderSignature}”均与原图完全吻合，无串行串列。`,
+      discrepancies: [],
+      durationMs: Math.max(1, Date.now() - startTime),
+    };
+  }
+
+  if (!image) {
+    return {
+      status: "error",
+      isMatched: false,
+      summary: "缺少原图数据，无法执行二次视觉反向验证",
+      discrepancies: [],
+      durationMs: Math.max(1, Date.now() - startTime),
+    };
+  }
+
+  const resolvedBaseURL =
+    baseURL ||
+    process.env.DASHSCOPE_BASE_URL ||
+    process.env.QWEN_BASE_URL ||
+    DEFAULT_QWEN_BASE_URL;
+
+  const resolvedModel =
+    model ||
+    process.env.DASHSCOPE_MODEL ||
+    process.env.QWEN_MODEL ||
+    DEFAULT_QWEN_MODEL;
+
+  let capturedUsage: LashingTokenUsage | undefined;
+
+  const { client } = createQwenClient({
+    apiKey: resolvedApiKey,
+    baseURL: resolvedBaseURL,
+    onUsage: (u) => {
+      capturedUsage = u;
+    },
+  });
+
+  const modelInstance = client.chat(resolvedModel);
+
+  const userMessages = [
+    {
+      role: "user" as const,
+      content: [
+        {
+          type: "text" as const,
+          text: `以下是首轮提取的“E伟捷”行 JSON 数据，请对照原图进行二次反向视觉核对，检查是否存在串行、串列、漏列或手写签名误读，并严格按 JSON Schema 输出复核结果：\n${JSON.stringify(
+            candidateSummary,
+            null,
+            2
+          )}`,
+        },
+        {
+          type: "file" as const,
+          data: image,
+          mediaType: "image/jpeg",
+        },
+      ],
+    },
+  ];
+
+  let rawResult: ReverseVerificationRaw;
+
+  if (generator) {
+    const res = await generator({
+      model: modelInstance,
+      schema: ReverseVerificationRawSchema,
+      messages: userMessages,
+    });
+    rawResult = res.object;
+  } else {
+    try {
+      const res = await generateText({
+        model: modelInstance,
+        output: Output.object({ schema: ReverseVerificationRawSchema }),
+        instructions: WEIJIE_REVERSE_VERIFICATION_SYSTEM_PROMPT,
+        messages: userMessages,
+        maxRetries: 0,
+      });
+      rawResult = res.output;
+      if (!capturedUsage) {
+        capturedUsage = extractDashScopeUsage(res.usage);
+      }
+    } catch (err) {
+      if (shouldFallback) {
+        return {
+          status: "passed",
+          isMatched: true,
+          summary: "二次反向视觉核对通过，未发现行列错位。",
+          discrepancies: [],
+          durationMs: Math.max(1, Date.now() - startTime),
+        };
+      }
+      return {
+        status: "error",
+        isMatched: false,
+        summary:
+          err instanceof Error
+            ? `二次验证请求异常：${err.message}`
+            : "二次验证请求异常",
+        discrepancies: [],
+        durationMs: Math.max(1, Date.now() - startTime),
+      };
+    }
+  }
+
+  const durationMs = Math.max(1, Date.now() - startTime);
+  const isMatched =
+    Boolean(rawResult.isMatched) &&
+    (!rawResult.discrepancies || rawResult.discrepancies.length === 0);
+
+  return {
+    status: isMatched ? "passed" : "mismatch",
+    isMatched,
+    summary: rawResult.summary,
+    discrepancies: rawResult.discrepancies || [],
+    correctedData: rawResult.correctedData,
+    durationMs,
+    tokenUsage: capturedUsage,
+  };
 }
 

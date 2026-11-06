@@ -3,6 +3,7 @@ import {
   extractImageFromPayload,
   extractLashingDataFromImage,
   generatePlainTextReply,
+  reverseVerifyLashingData,
   DEFAULT_QWEN_BASE_URL,
   DEFAULT_QWEN_MODEL,
 } from "@/lib/lashing/extractor";
@@ -85,6 +86,41 @@ export async function POST(req: NextRequest) {
     const image = extractImageFromPayload(body);
     const plainPrompt =
       typeof body.prompt === "string" ? body.prompt.trim() : "";
+
+    // Stage 2: Reverse Verification Mode
+    if (
+      (body.mode === "reverse_verify" || body.action === "reverse_verify") &&
+      body.extractedReport &&
+      typeof body.extractedReport === "object"
+    ) {
+      const reverseVerification = await reverseVerifyLashingData({
+        image: image || undefined,
+        extractedReport: body.extractedReport as Record<string, unknown>,
+        apiKey,
+        baseURL,
+        model,
+        mockFallback,
+      });
+
+      const totalDurationMs =
+        reverseVerification.durationMs || Math.max(1, Date.now() - reqStart);
+
+      return NextResponse.json(
+        {
+          mode: "reverse_verify",
+          reverseVerification: {
+            ...reverseVerification,
+            durationMs: totalDurationMs,
+          },
+        },
+        {
+          status: 200,
+          headers: {
+            "x-duration-ms": String(totalDurationMs),
+          },
+        }
+      );
+    }
 
     if (!image) {
       if (plainPrompt) {
