@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { RawLashingInput, RawLashingInputSchema, WeijieLashingReport } from "./types";
 import { verifyLashingData } from "./verification";
 
@@ -237,13 +237,10 @@ export async function extractLashingDataFromImage(
     baseURL: resolvedBaseURL,
   });
 
-  const modelInstance = client(resolvedModel);
+  // Use client.chat to target OpenAI-compatible /v1/chat/completions (DashScope, etc.)
+  const modelInstance = client.chat(resolvedModel);
 
-  const messages = [
-    {
-      role: "system" as const,
-      content: WEIJIE_EXTRACTION_SYSTEM_PROMPT,
-    },
+  const userMessages = [
     {
       role: "user" as const,
       content: [
@@ -252,8 +249,9 @@ export async function extractLashingDataFromImage(
           text: "请识别并提取表格中‘E伟捷’队伍的绑扎作业明细与汇总数据。",
         },
         {
-          type: "image" as const,
-          image,
+          type: "file" as const,
+          data: image,
+          mediaType: "image/jpeg",
         },
       ],
     },
@@ -265,17 +263,18 @@ export async function extractLashingDataFromImage(
     const res = await generator({
       model: modelInstance,
       schema: RawLashingInputSchema,
-      messages,
+      messages: userMessages,
     });
     rawOutput = res.object;
   } else {
     try {
-      const res = await generateObject({
+      const res = await generateText({
         model: modelInstance,
-        schema: RawLashingInputSchema,
-        messages,
+        output: Output.object({ schema: RawLashingInputSchema }),
+        instructions: WEIJIE_EXTRACTION_SYSTEM_PROMPT,
+        messages: userMessages,
       });
-      rawOutput = res.object;
+      rawOutput = res.output;
     } catch (err) {
       if (shouldFallback) {
         return BENCHMARK_REPORT;

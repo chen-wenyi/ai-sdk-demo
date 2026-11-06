@@ -212,4 +212,65 @@ describe("extractLashingDataFromImage Service", () => {
     expect(report.leaderSignature).toBe("李春河");
     expect(report.isValid).toBe(true);
   });
+
+  it("should execute generateText with instructions and file content without throwing InvalidPromptError", async () => {
+    const { MockLanguageModelV4 } = await import("ai/test");
+
+    const mockOutput = {
+      teamName: "E伟捷",
+      date: "11月2日",
+      voyage: "中远海运欧亚航 V27",
+      items: [
+        { code: "48FR", type: "框架箱", unitCapacity: 3, boxCount: 28 },
+        { code: "40FM", type: "斜架箱/框架", unitCapacity: 3, boxCount: 26 },
+      ],
+      totalBoxes: 54,
+      totalVehicleUnits: 162,
+      workerCount: 20,
+      leaderSignature: "李春河",
+    };
+
+    const mockModel = new MockLanguageModelV4({
+      doGenerate: {
+        content: [{ type: "text", text: JSON.stringify(mockOutput) }],
+        finishReason: { unified: "stop", raw: "stop" },
+        usage: {
+          inputTokens: { total: 10, noCache: 0, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 10, text: 10, reasoning: 0 },
+        },
+        warnings: [],
+      },
+    });
+
+    const report = await extractLashingDataFromImage({
+      image: "data:image/jpeg;base64,/9j/4AAQSkZJRg==",
+      apiKey: "sk-real-test-key",
+      mockFallback: false,
+      generator: async () => {
+        const { generateText, Output } = await import("ai");
+        const { RawLashingInputSchema } = await import("./types");
+        const res = await generateText({
+          model: mockModel,
+          output: Output.object({ schema: RawLashingInputSchema }),
+          instructions: "test instructions",
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "extract" },
+                { type: "file", data: "data:image/jpeg;base64,/9j/4AAQSkZJRg==", mediaType: "image/jpeg" },
+              ],
+            },
+          ],
+        });
+        return { object: res.output };
+      },
+    });
+
+    expect(report.teamName).toBe("E伟捷");
+    expect(report.items).toHaveLength(2);
+    expect(report.calculatedVehicleUnits).toBe(162);
+    expect(report.isValid).toBe(true);
+  });
 });
+
