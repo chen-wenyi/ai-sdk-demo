@@ -4,12 +4,12 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance Criteria
 
-- [ ] Next.js 15 工程能够成功执行构建和测试（`pnpm build` / `npm run test`）
-- [ ] Tailwind CSS 与 Shadcn UI 基础配置就绪
-- [ ] 实现 `verifyLashingData` 纯函数模块，根据领域模型校验数据并输出结构化校验报告
-- [ ] 针对伟捷典型作业数据（48FR: 28箱 × 3台, 40FM: 26箱 × 3台，总计 162 台）的自动化单元测试完全通过
-- [ ] 针对不一致数据（如计算总和与表头车台数不匹配）的断言测试能够正确返回异常标记
+- [x] Next.js 15 工程能够成功执行构建和测试（`pnpm build` / `npm run test`）
+- [x] Tailwind CSS 与 Shadcn UI 基础配置就绪
+- [x] 实现 `verifyLashingData` 纯函数模块，根据领域模型校验数据并输出结构化校验报告
+- [x] 针对伟捷典型作业数据（48FR: 28箱 × 3台, 40FM: 26箱 × 3台，总计 162 台）的自动化单元测试完全通过
+- [x] 针对不一致数据（如计算总和与表头车台数不匹配）的断言测试能够正确返回异常标记
