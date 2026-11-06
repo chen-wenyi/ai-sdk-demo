@@ -39,7 +39,7 @@ describe("WeijieLashingCard Component (SSR & Static Verification)", () => {
     expect(html).toContain("E伟捷");
     expect(html).toContain("11月2日");
     expect(html).toContain("中远海运欧亚航 V27");
-    expect(html).toContain("算力校验通过");
+    expect(html).toContain("一致性校验通过");
   });
 
   it("should render the horizontal transposed table with 4 distinct rows", () => {
@@ -90,16 +90,16 @@ describe("WeijieLashingCard Component (SSR & Static Verification)", () => {
       calculatedVehicleUnits: 162,
       isValid: false,
       discrepancyMessage:
-        "算力不一致：理论折算总台数 162 与填报绑扎车装台数 150 偏差 12",
+        "理论折算总台数 162 与填报绑扎车装台数 150 偏差 12",
     };
 
     const html = renderToString(
       <WeijieLashingCard report={discrepancyReport} />
     );
 
-    expect(html).toContain("算力存在偏差");
+    expect(html).toContain("一致性存在偏差");
     expect(html).toContain(
-      "算力不一致：理论折算总台数 162 与填报绑扎车装台数 150 偏差 12"
+      "理论折算总台数 162 与填报绑扎车装台数 150 偏差 12"
     );
   });
 
@@ -192,7 +192,7 @@ describe("WeijieLashingCard Interactive HITL Mode (Seam 2)", () => {
     render(<ControlledTestWrapper />);
 
     // Initially passes calculation with 162 units
-    expect(screen.getByTestId("status-badge").textContent).toContain("算力校验通过");
+    expect(screen.getByTestId("status-badge").textContent).toContain("一致性校验通过");
 
     // Click "编辑修正"
     fireEvent.click(screen.getByTestId("btn-edit"));
@@ -232,6 +232,38 @@ describe("WeijieLashingCard Interactive HITL Mode (Seam 2)", () => {
     // Total vehicles in summary is now 168
     expect(screen.getByTestId("summary-total-vehicles").textContent).toContain("168");
     expect(screen.getByTestId("summary-total-boxes").textContent).toContain("56");
+  });
+
+  it("should support direct '确认无误' button in view mode to mark as verified", () => {
+    const onUpdateMock = vi.fn();
+    render(
+      <WeijieLashingCard
+        report={benchmarkReport}
+        onUpdateReport={onUpdateMock}
+      />
+    );
+
+    // Initial state: not verified, so "确认无误" button is visible
+    const verifyBtn = screen.getByTestId("btn-confirm-verify");
+    expect(verifyBtn).toBeDefined();
+    expect(verifyBtn.textContent).toContain("确认无误");
+
+    // Click "确认无误"
+    fireEvent.click(verifyBtn);
+
+    // Should call onUpdateReport with isHumanVerified: true
+    expect(onUpdateMock).toHaveBeenCalledTimes(1);
+    expect(onUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isHumanVerified: true,
+      })
+    );
+
+    // Status badge updates to "已由人工核实验收"
+    expect(screen.getByTestId("status-badge").textContent).toContain("已由人工核实验收");
+
+    // "确认无误" button is now hidden
+    expect(screen.queryByTestId("btn-confirm-verify")).toBeNull();
   });
 
   it("should support adding a new container column and removing a column in edit mode", () => {
@@ -291,11 +323,11 @@ describe("WeijieLashingCard Interactive HITL Mode (Seam 2)", () => {
     const csv = exportLashingToCsv(benchmarkReport);
 
     expect(csv.charCodeAt(0)).toBe(0xfeff); // UTF-8 BOM
-    expect(csv).toContain("箱型代码,箱型分类,单箱台数基准,绑扎箱数,小计车装台数");
+    expect(csv).toContain("箱型代码,箱型分类,单箱台数,绑扎箱数,小计车装台数");
     expect(csv).toContain('"48FR","框架箱",3,28,84');
     expect(csv).toContain('"40FM","斜架箱/框架",3,26,78');
     expect(csv).toContain('"汇总","","","","","",54,162');
     expect(csv).toContain('"队长签名","李春河"');
-    expect(csv).toContain('"算力校验状态","通过"');
+    expect(csv).toContain('"一致性校验状态","通过"');
   });
 });

@@ -27,22 +27,6 @@ export default function Home() {
     setSettings(loadStoredSettings());
   }, []);
 
-  const loadSampleDataUrl = async (): Promise<string> => {
-    try {
-      const response = await fetch("/sample-lashing.jpg");
-      const blob = await response.blob();
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    } catch {
-      // Return a lightweight fallback data url
-      return "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
-    }
-  };
-
   const handleSendMessage = useCallback(
     async (attachments: PromptInputAttachment[]) => {
       if (isLoading) return;
@@ -57,7 +41,7 @@ export default function Home() {
         role: "user",
         content:
           text ||
-          "请识别本张《每天各绑扎队作业数量统计表》中“E伟捷”队伍的作业数据并核对算力。",
+          "请识别本张《每天各绑扎队作业数量统计表》中“E伟捷”队伍的作业数据并核对一致性。",
         image: imageAttachment,
         createdAt: new Date(),
       };
@@ -105,7 +89,7 @@ export default function Home() {
         const assistantMessage: ChatMessage = {
           id: `assistant-${Date.now()}`,
           role: "assistant",
-          content: `已成功定位并提取【${report.teamName || "E伟捷"}】行绑扎数据，算力比对${
+          content: `已成功定位并提取【${report.teamName || "E伟捷"}】行绑扎数据，一致性比对${
             report.isValid ? "一致（校验通过）" : "存在偏差，请确认"
           }：`,
           report,
@@ -130,21 +114,6 @@ export default function Home() {
     },
     [input, isLoading, settings]
   );
-
-  const handleLoadSample = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const dataUrl = await loadSampleDataUrl();
-      const sampleAttachment: PromptInputAttachment = {
-        id: `sample-${Date.now()}`,
-        url: dataUrl,
-        name: "港口现场作业统计表-11月2日.jpg",
-      };
-      await handleSendMessage([sampleAttachment]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [handleSendMessage]);
 
   const handleUpdateReport = useCallback(
     (messageId: string, newReport: WeijieLashingReport) => {
@@ -183,7 +152,6 @@ export default function Home() {
         <ChatMessageList
           messages={messages}
           isLoading={isLoading}
-          onSelectSample={handleLoadSample}
           onUpdateReport={handleUpdateReport}
         />
 
@@ -194,7 +162,6 @@ export default function Home() {
             onChange={setInput}
             onSubmit={handleSendMessage}
             isLoading={isLoading}
-            onLoadSampleFixture={handleLoadSample}
           />
           <div className="text-center pt-2 text-[11px] text-muted-foreground/70">
             港口绑扎智能助手 · 遵循 shadcn AI Elements 交互规范与 Zod 结构化契约

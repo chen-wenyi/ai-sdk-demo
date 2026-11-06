@@ -33,7 +33,7 @@ describe("Chat Components Integration", () => {
       <ChatMessageList messages={[]} isLoading={true} />
     );
 
-    expect(html).toContain("正在多模态定位“E伟捷”绑扎数据并核对算力...");
+    expect(html).toContain("正在多模态定位“E伟捷”绑扎数据并核对一致性...");
     expect(html).toContain('data-testid="chat-thinking-indicator"');
   });
 
@@ -48,7 +48,7 @@ describe("Chat Components Integration", () => {
       {
         id: "msg-2",
         role: "assistant",
-        content: "已成功定位并提取【E伟捷】行绑扎数据，算力比对一致：",
+        content: "已成功定位并提取【E伟捷】行绑扎数据，一致性比对一致：",
         report: benchmarkReport,
       },
     ];

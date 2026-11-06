@@ -57,8 +57,11 @@ export function verifyLashingData(input: RawLashingInput): WeijieLashingReport {
     );
   }
 
-  const isValid = discrepancies.length === 0;
-  const discrepancyMessage = isValid ? undefined : discrepancies.join("；");
+  // Per spec line 59: isValid is strictly calculatedVehicleUnits === totalVehicleUnits.
+  // Discrepancy in box count is reported in discrepancyMessage as an informational notice.
+  const isValid = calculatedVehicleUnits === totalVehicleUnits;
+  const discrepancyMessage =
+    discrepancies.length > 0 ? discrepancies.join("；") : undefined;
 
   return {
     teamName,
@@ -70,6 +73,7 @@ export function verifyLashingData(input: RawLashingInput): WeijieLashingReport {
     workerCount: Number(input.workerCount) || 0,
     leaderSignature: (input.leaderSignature || "").trim(),
     calculatedVehicleUnits,
+    calculatedBoxes,
     isValid,
     discrepancyMessage,
     isHumanVerified: input.isHumanVerified,

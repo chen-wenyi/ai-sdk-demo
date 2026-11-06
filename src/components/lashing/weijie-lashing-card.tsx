@@ -50,6 +50,9 @@ export function WeijieLashingCard({
 }: WeijieLashingCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [localHumanVerified, setLocalHumanVerified] = useState(
+    () => Boolean(report.isHumanVerified ?? isVerified)
+  );
   const [draft, setDraft] = useState<RawLashingInput>(() => ({
     teamName: report.teamName,
     date: report.date,
@@ -64,6 +67,7 @@ export function WeijieLashingCard({
 
   // Synchronize draft when report changes externally while not editing
   useEffect(() => {
+    setLocalHumanVerified(Boolean(report.isHumanVerified ?? isVerified));
     if (!isEditing) {
       setDraft({
         teamName: report.teamName,
@@ -79,23 +83,13 @@ export function WeijieLashingCard({
     }
   }, [report, isVerified, isEditing]);
 
-  // Real-time calculation during edit mode
-  const { liveCalculatedVehicleUnits, liveCalculatedBoxes } = useMemo(() => {
-    const activeItems = draft.items || [];
-    const boxes = activeItems.reduce(
-      (sum, item) => sum + (Number(item.boxCount) || 0),
-      0
-    );
-    const vehicleUnits = activeItems.reduce(
-      (sum, item) =>
-        sum + (Number(item.boxCount) || 0) * (Number(item.unitCapacity) || 0),
-      0
-    );
-    return {
-      liveCalculatedVehicleUnits: vehicleUnits,
-      liveCalculatedBoxes: boxes,
-    };
-  }, [draft.items]);
+  // Real-time calculation during edit mode delegated to verifyLashingData
+  const draftVerification = useMemo(() => {
+    return verifyLashingData(draft);
+  }, [draft]);
+
+  const liveCalculatedVehicleUnits = draftVerification.calculatedVehicleUnits;
+  const liveCalculatedBoxes = draftVerification.calculatedBoxes ?? 0;
 
   const isVehicleUnitsConsistent =
     liveCalculatedVehicleUnits === Number(draft.totalVehicleUnits);
@@ -135,12 +129,22 @@ export function WeijieLashingCard({
   };
 
   const handleSaveEditing = () => {
+    setLocalHumanVerified(true);
     const verified = verifyLashingData({
       ...draft,
       isHumanVerified: true,
     });
 
     setIsEditing(false);
+    onUpdateReport?.(verified);
+  };
+
+  const handleConfirmVerified = () => {
+    setLocalHumanVerified(true);
+    const verified: WeijieLashingReport = {
+      ...report,
+      isHumanVerified: true,
+    };
     onUpdateReport?.(verified);
   };
 
@@ -233,7 +237,8 @@ export function WeijieLashingCard({
 
   const currentDisplayReport = isEditing ? draft : report;
   const currentItems = isEditing ? draft.items : report.items;
-  const isHumanVerified = report.isHumanVerified || isVerified;
+  const isHumanVerified =
+    localHumanVerified || Boolean(report.isHumanVerified || isVerified);
 
   return (
     <Card
@@ -341,7 +346,7 @@ export function WeijieLashingCard({
                     className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 font-medium text-xs px-2 py-0.5"
                   >
                     <CheckCircle2 className="size-3 text-emerald-600 dark:text-emerald-400 mr-1" />
-                    算力校验通过
+                    一致性校验通过
                   </Badge>
                 ) : (
                   <Badge
@@ -350,8 +355,22 @@ export function WeijieLashingCard({
                     className="border-amber-500/50 text-amber-600 dark:text-amber-400 bg-amber-500/10 font-medium text-xs px-2 py-0.5"
                   >
                     <AlertTriangle className="size-3 text-amber-600 dark:text-amber-400 mr-1" />
-                    算力存在偏差
+                    一致性存在偏差
                   </Badge>
+                )}
+
+                {!isHumanVerified && (
+                  <Button
+                    data-testid="btn-confirm-verify"
+                    variant="default"
+                    size="xs"
+                    onClick={handleConfirmVerified}
+                    className="h-7 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-xs"
+                    title="人工核验无误并确认验收"
+                  >
+                    <Check className="size-3 mr-1" />
+                    确认无误
+                  </Button>
                 )}
 
                 <Button
@@ -416,7 +435,7 @@ export function WeijieLashingCard({
             <span>
               {isLiveConsistent
                 ? `实时核算一致：理论折算车装台数与填报总台数均为 ${liveCalculatedVehicleUnits} 台，合计箱数 ${liveCalculatedBoxes} 箱`
-                : `实时算力校验存在偏差：实时计算折算台数 (${liveCalculatedVehicleUnits}) 与填报台数 (${draft.totalVehicleUnits}) 差异 ${Math.abs(liveCalculatedVehicleUnits - Number(draft.totalVehicleUnits))} 台${
+                : `实时一致性校验存在偏差：实时计算折算台数 (${liveCalculatedVehicleUnits}) 与填报台数 (${draft.totalVehicleUnits}) 差异 ${Math.abs(liveCalculatedVehicleUnits - Number(draft.totalVehicleUnits))} 台${
                     !isBoxesConsistent
                       ? `；计算箱数 (${liveCalculatedBoxes}) 与填报箱数 (${draft.totalBoxes}) 差异 ${Math.abs(liveCalculatedBoxes - Number(draft.totalBoxes))} 箱`
                       : ""

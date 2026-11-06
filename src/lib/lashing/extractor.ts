@@ -58,7 +58,7 @@ export const WEIJIE_EXTRACTION_SYSTEM_PROMPT = `你是一名专业的港口集�
 4. 汇总与签名信息提取：
    - totalBoxes: E伟捷行在“合计”列填报的绑扎箱数总数（如 54）。
    - totalVehicleUnits: E伟捷行在“绑扎车装台数”列填报的数字（如 162）。
-   - workerCount: E伟捷行在“各队作业人数”列填报的施工人数（如 20）。
+   - workerCount: E伟捷行在“各队作业人数”列填报的作业人数（如 20）。
    - leaderSignature: 表格最右侧“队长签名”列中该行对应的手写名字（例如 "李春河"）。
 
 请严格按照提供的结构化 Schema 输出提取的 JSON 对象。`;

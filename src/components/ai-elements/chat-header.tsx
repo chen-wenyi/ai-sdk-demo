@@ -43,7 +43,7 @@ export function ChatHeader({
               </Badge>
             </div>
             <p className="text-[11px] text-muted-foreground hidden sm:block">
-              集装箱作业统计表 Qwen 视觉识别与算力横向校对
+              集装箱作业统计表 Qwen 视觉识别与一致性横向校对
             </p>
           </div>
         </div>

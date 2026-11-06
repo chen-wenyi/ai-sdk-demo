@@ -7,7 +7,6 @@ import {
   ArrowUp,
   X,
   FileImage,
-  Sparkles,
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -27,7 +26,6 @@ export interface PromptInputProps {
   isLoading?: boolean;
   placeholder?: string;
   className?: string;
-  onLoadSampleFixture?: () => void;
 }
 
 export function PromptInput({
@@ -38,7 +36,6 @@ export function PromptInput({
   isLoading = false,
   placeholder = "输入提示词，或直接粘贴 / 拖拽集装箱绑扎统计表图片...",
   className,
-  onLoadSampleFixture,
 }: PromptInputProps) {
   const [attachments, setAttachments] = useState<PromptInputAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -241,21 +238,6 @@ export function PromptInput({
             <Paperclip className="size-3.5" />
             <span>添加图片</span>
           </Button>
-
-          {onLoadSampleFixture && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onLoadSampleFixture}
-              disabled={disabled || isLoading}
-              className="h-7 gap-1 px-2 text-xs border-dashed text-muted-foreground hover:text-foreground rounded-lg"
-              title="载入港口码头《每天各绑扎队作业数量统计表》真实单据"
-            >
-              <Sparkles className="size-3 text-amber-500" />
-              <span>载入现场单据样本</span>
-            </Button>
-          )}
         </div>
 
         <div className="flex items-center gap-2">

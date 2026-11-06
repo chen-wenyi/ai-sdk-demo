@@ -11,7 +11,6 @@ import {
   AlertCircle,
   FileSpreadsheet,
   Sparkles,
-  Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +27,6 @@ export interface ChatMessage {
 export interface ChatMessageListProps {
   messages: ChatMessage[];
   isLoading?: boolean;
-  onSelectSample?: () => void;
   onUpdateReport?: (messageId: string, newReport: WeijieLashingReport) => void;
   className?: string;
 }
@@ -36,7 +34,6 @@ export interface ChatMessageListProps {
 export function ChatMessageList({
   messages,
   isLoading = false,
-  onSelectSample,
   onUpdateReport,
   className,
 }: ChatMessageListProps) {
@@ -68,19 +65,6 @@ export function ChatMessageList({
             队伍作业数据，并在聊天流中自动渲染横向转置表格与一致性核验。
           </p>
         </div>
-
-        {onSelectSample && (
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={onSelectSample}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-border/80 bg-muted/40 hover:bg-muted text-xs font-medium text-foreground transition-all hover:scale-102 shadow-2xs"
-            >
-              <Layers className="size-4 text-primary" />
-              <span>加载现场作业单样本一键体验</span>
-            </button>
-          </div>
-        )}
       </div>
     );
   }
@@ -206,7 +190,7 @@ export function ChatMessageList({
             <div className="inline-flex items-center gap-2.5 rounded-2xl bg-muted/60 border border-border/60 px-4 py-2.5 text-xs text-muted-foreground shadow-2xs">
               <Loader2 className="size-3.5 animate-spin text-primary" />
               <span className="font-medium text-foreground">
-                正在多模态定位“E伟捷”绑扎数据并核对算力...
+                正在多模态定位“E伟捷”绑扎数据并核对一致性...
               </span>
               <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4 border-primary/30 text-primary">
                 Qwen 3 VL

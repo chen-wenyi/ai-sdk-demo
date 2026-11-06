@@ -10,7 +10,7 @@ export function exportLashingToCsv(report: WeijieLashingReport): string {
     "航次",
     "箱型代码",
     "箱型分类",
-    "单箱台数基准",
+    "单箱台数",
     "绑扎箱数",
     "小计车装台数",
   ];
@@ -41,7 +41,7 @@ export function exportLashingToCsv(report: WeijieLashingReport): string {
     [`"各队作业人数"`, report.workerCount],
     [`"队长签名"`, `"${report.leaderSignature || "未签署"}"`],
     [
-      `"算力校验状态"`,
+      `"一致性校验状态"`,
       report.isValid ? `"通过"` : `"存在偏差: ${report.discrepancyMessage || ""}"`,
     ],
     [`"核验模式"`, report.isHumanVerified ? `"人工已核实验收"` : `"AI 自动识别"`],

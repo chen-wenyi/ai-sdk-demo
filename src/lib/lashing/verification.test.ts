@@ -61,7 +61,7 @@ describe("Domain Verification Seam (verifyLashingData)", () => {
     expect(report.discrepancyMessage).toContain("160");
   });
 
-  it("should flag discrepancy when calculated box sum does not match totalBoxes", () => {
+  it("should report discrepancy notice when calculated box sum does not match totalBoxes while keeping isValid true if vehicle units match", () => {
     const input: RawLashingInput = {
       teamName: "E伟捷",
       date: "11月2日",
@@ -78,7 +78,7 @@ describe("Domain Verification Seam (verifyLashingData)", () => {
 
     const report = verifyLashingData(input);
 
-    expect(report.isValid).toBe(false);
+    expect(report.isValid).toBe(true);
     expect(report.discrepancyMessage).toContain("54");
     expect(report.discrepancyMessage).toContain("50");
   });

@@ -3,7 +3,7 @@ import { z } from "zod";
 export const LashingItemSchema = z.object({
   code: z.string().describe("箱型代码，如 48FR, 40FM"),
   type: z.string().describe("箱型分类名称，如 框架箱, 斜架箱/框架"),
-  unitCapacity: z.number().describe("单箱台数基准系数"),
+  unitCapacity: z.number().describe("单箱台数"),
   boxCount: z.number().describe("绑扎箱数"),
 });
 
@@ -33,6 +33,7 @@ export const WeijieLashingReportSchema = z.object({
   workerCount: z.number(),
   leaderSignature: z.string(),
   calculatedVehicleUnits: z.number(),
+  calculatedBoxes: z.number().optional(),
   isValid: z.boolean(),
   discrepancyMessage: z.string().optional(),
   isHumanVerified: z.boolean().optional(),
