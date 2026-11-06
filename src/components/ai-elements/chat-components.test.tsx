@@ -91,16 +91,24 @@ describe("Chat Components Integration", () => {
     expect(html).toContain("qwen-vl-ocr");
   });
 
-  it("should render duration badge on completed assistant message and card", () => {
+  it("should render duration and token usage badges on completed assistant message and card", () => {
+    const tokenUsage = {
+      totalTokens: 3386,
+      inputTokens: 3196,
+      outputTokens: 190,
+      imageTokens: 1902,
+    };
     const messages: ChatMessage[] = [
       {
         id: "msg-duration",
         role: "assistant",
         content: "已提取完成：",
         durationMs: 2350,
+        tokenUsage,
         report: {
           ...benchmarkReport,
           durationMs: 2350,
+          tokenUsage,
         },
       },
     ];
@@ -112,5 +120,8 @@ describe("Chat Components Integration", () => {
     expect(html).toContain('data-testid="message-duration"');
     expect(html).toContain('data-testid="duration-badge"');
     expect(html).toContain("2.35s");
+    expect(html).toContain('data-testid="message-token-usage"');
+    expect(html).toContain('data-testid="token-usage-badge"');
+    expect(html).toContain("全部 Token 3386 · 输入 3196 (图片 1902) · 输出 190");
   });
 });

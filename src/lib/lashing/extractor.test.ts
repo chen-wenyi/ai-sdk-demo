@@ -6,11 +6,30 @@ import {
   createQwenClient,
   extractLashingDataFromImage,
   parseLashingJsonFromText,
+  extractDashScopeUsage,
   DEFAULT_QWEN_BASE_URL,
 } from "./extractor";
 import { RawLashingInput } from "./types";
 
 describe("Extractor Utilities", () => {
+  it("should extract DashScope token usage including image_tokens", () => {
+    const rawUsage = {
+      prompt_tokens: 3196,
+      completion_tokens: 190,
+      total_tokens: 3386,
+      prompt_tokens_details: {
+        image_tokens: 1902,
+      },
+    };
+    const usage = extractDashScopeUsage(rawUsage);
+    expect(usage).toEqual({
+      inputTokens: 3196,
+      outputTokens: 190,
+      totalTokens: 3386,
+      imageTokens: 1902,
+    });
+  });
+
   it("should extract image from direct string fields (image, dataUrl, file)", () => {
     const direct1 = extractImageFromPayload({
       image: "data:image/jpeg;base64,abc1234",

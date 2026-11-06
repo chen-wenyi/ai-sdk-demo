@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState } from "react";
-import { WeijieLashingReport } from "@/lib/lashing/types";
+import { WeijieLashingReport, LashingTokenUsage } from "@/lib/lashing/types";
 import { WeijieLashingCard } from "@/components/lashing/weijie-lashing-card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -22,6 +22,7 @@ export interface ChatMessage {
   image?: string;
   report?: WeijieLashingReport;
   durationMs?: number;
+  tokenUsage?: LashingTokenUsage;
   isError?: boolean;
   createdAt?: Date;
 }
@@ -91,6 +92,7 @@ export function ChatMessageList({
       {messages.map((message) => {
         const isUser = message.role === "user";
         const duration = message.durationMs ?? message.report?.durationMs;
+        const usage = message.tokenUsage ?? message.report?.tokenUsage;
 
         return (
           <div
@@ -116,7 +118,7 @@ export function ChatMessageList({
               )}
             >
               {/* Header Label */}
-              <div className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground font-medium">
+              <div className="flex flex-wrap items-center gap-1.5 px-1 text-[11px] text-muted-foreground font-medium">
                 <span>{isUser ? "统计员" : "伟捷 AI 助手"}</span>
                 {message.createdAt && (
                   <span>
@@ -133,6 +135,20 @@ export function ChatMessageList({
                   >
                     <Clock className="size-2.5 text-primary" />
                     <span>{`${(duration / 1000).toFixed(2)}s`}</span>
+                  </span>
+                )}
+                {!isUser && usage && (
+                  <span
+                    data-testid="message-token-usage"
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono text-foreground/80"
+                  >
+                    <span>
+                      {`全部 Token ${usage.totalTokens} · 输入 ${usage.inputTokens}${
+                        typeof usage.imageTokens === "number"
+                          ? ` (图片 ${usage.imageTokens})`
+                          : ""
+                      } · 输出 ${usage.outputTokens}`}
+                    </span>
                   </span>
                 )}
               </div>

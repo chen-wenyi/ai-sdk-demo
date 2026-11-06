@@ -93,6 +93,7 @@ export default function Home() {
             role: "assistant",
             content: data.text,
             durationMs,
+            tokenUsage: data.tokenUsage,
             createdAt: new Date(),
           };
           setMessages((prev) => [...prev, assistantMessage]);
@@ -116,6 +117,7 @@ export default function Home() {
           }：`,
           report,
           durationMs,
+          tokenUsage: report.tokenUsage,
           createdAt: new Date(),
         };
 

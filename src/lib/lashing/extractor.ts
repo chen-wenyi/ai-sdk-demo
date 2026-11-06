@@ -1,6 +1,11 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, Output } from "ai";
-import { RawLashingInput, RawLashingInputSchema, WeijieLashingReport } from "./types";
+import {
+  RawLashingInput,
+  RawLashingInputSchema,
+  WeijieLashingReport,
+  LashingTokenUsage,
+} from "./types";
 import { verifyLashingData } from "./verification";
 
 export const DEFAULT_QWEN_BASE_URL =
@@ -165,11 +170,69 @@ export function extractImageFromPayload(body: unknown): string | null {
 }
 
 /**
+ * Extracts DashScope / OpenAI-compatible token usage from raw response JSON or AI SDK usage object.
+ */
+export function extractDashScopeUsage(rawUsage: unknown): LashingTokenUsage | undefined {
+  if (!rawUsage || typeof rawUsage !== "object") return undefined;
+  const u = rawUsage as Record<string, unknown>;
+
+  const inputTokens =
+    typeof u.prompt_tokens === "number"
+      ? u.prompt_tokens
+      : typeof u.inputTokens === "number"
+      ? u.inputTokens
+      : undefined;
+
+  const outputTokens =
+    typeof u.completion_tokens === "number"
+      ? u.completion_tokens
+      : typeof u.outputTokens === "number"
+      ? u.outputTokens
+      : undefined;
+
+  const totalTokens =
+    typeof u.total_tokens === "number"
+      ? u.total_tokens
+      : typeof u.totalTokens === "number"
+      ? u.totalTokens
+      : inputTokens !== undefined && outputTokens !== undefined
+      ? inputTokens + outputTokens
+      : undefined;
+
+  if (inputTokens === undefined || outputTokens === undefined || totalTokens === undefined) {
+    return undefined;
+  }
+
+  let imageTokens: number | undefined;
+  if (typeof u.image_tokens === "number") {
+    imageTokens = u.image_tokens;
+  } else if (u.prompt_tokens_details && typeof u.prompt_tokens_details === "object") {
+    const details = u.prompt_tokens_details as Record<string, unknown>;
+    if (typeof details.image_tokens === "number") {
+      imageTokens = details.image_tokens;
+    } else if (typeof details.video_tokens === "number") {
+      imageTokens = details.video_tokens;
+    }
+  }
+
+  return {
+    totalTokens,
+    inputTokens,
+    outputTokens,
+    ...(imageTokens !== undefined ? { imageTokens } : {}),
+  };
+}
+
+/**
  * Builds OpenAI-compatible provider instance (defaulting to DashScope / Qwen).
  * Injects `enable_thinking: false` into request bodies so Qwen3 models return immediately
- * without spending 100+ seconds in hidden background thinking.
+ * without spending 100+ seconds in hidden background thinking, and captures raw DashScope `usage`.
  */
-export function createQwenClient(options: { apiKey?: string; baseURL?: string }) {
+export function createQwenClient(options: {
+  apiKey?: string;
+  baseURL?: string;
+  onUsage?: (usage: LashingTokenUsage) => void;
+}) {
   const apiKey =
     options.apiKey ||
     process.env.DASHSCOPE_API_KEY ||
@@ -198,7 +261,20 @@ export function createQwenClient(options: { apiKey?: string; baseURL?: string })
         // Keep original body if not JSON
       }
     }
-    return fetch(input, init);
+    const response = await fetch(input, init);
+    if (options.onUsage && response.ok) {
+      try {
+        const cloned = response.clone();
+        const json = (await cloned.json()) as Record<string, unknown>;
+        const usage = extractDashScopeUsage(json?.usage);
+        if (usage) {
+          options.onUsage(usage);
+        }
+      } catch {
+        // Ignore non-JSON or stream responses
+      }
+    }
+    return response;
   };
 
   return {
@@ -223,7 +299,12 @@ export async function generatePlainTextReply(options: {
   baseURL?: string;
   model?: string;
   mockFallback?: boolean;
-}): Promise<{ text: string; durationMs: number; model: string }> {
+}): Promise<{
+  text: string;
+  durationMs: number;
+  model: string;
+  tokenUsage?: LashingTokenUsage;
+}> {
   const startTime = Date.now();
   const { prompt, apiKey, baseURL, model, mockFallback } = options;
 
@@ -259,9 +340,14 @@ export async function generatePlainTextReply(options: {
     };
   }
 
+  let capturedUsage: LashingTokenUsage | undefined;
+
   const { client } = createQwenClient({
     apiKey: resolvedApiKey,
     baseURL: resolvedBaseURL,
+    onUsage: (u) => {
+      capturedUsage = u;
+    },
   });
 
   const modelInstance = client.chat(resolvedModel);
@@ -273,10 +359,13 @@ export async function generatePlainTextReply(options: {
       maxRetries: 0,
     });
 
+    const tokenUsage = capturedUsage || extractDashScopeUsage(res.usage);
+
     return {
       text: res.text,
       durationMs: Math.max(1, Date.now() - startTime),
       model: resolvedModel,
+      tokenUsage,
     };
   } catch (err) {
     if (shouldFallback && process.env.NODE_ENV === "test") {
@@ -348,7 +437,8 @@ export function parseLashingJsonFromText(text: string): RawLashingInput | null {
 /**
  * Vision Extraction Service:
  * Extracts "E伟捷" lashing statistics from image using strict JSON Output (`Output.object`),
- * disables deep thinking (`enable_thinking: false`), and records execution duration (`durationMs`).
+ * disables deep thinking (`enable_thinking: false`), and records execution duration (`durationMs`)
+ * and DashScope token usage (`tokenUsage`).
  */
 export async function extractLashingDataFromImage(
   options: ExtractionOptions
@@ -392,9 +482,14 @@ export async function extractLashingDataFromImage(
     process.env.QWEN_MODEL ||
     DEFAULT_QWEN_MODEL;
 
+  let capturedUsage: LashingTokenUsage | undefined;
+
   const { client } = createQwenClient({
     apiKey: resolvedApiKey,
     baseURL: resolvedBaseURL,
+    onUsage: (u) => {
+      capturedUsage = u;
+    },
   });
 
   // Use client.chat to target OpenAI-compatible /v1/chat/completions (DashScope, etc.)
@@ -436,6 +531,9 @@ export async function extractLashingDataFromImage(
         maxRetries: 0,
       });
       rawOutput = res.output;
+      if (!capturedUsage) {
+        capturedUsage = extractDashScopeUsage(res.usage);
+      }
     } catch (err) {
       if (shouldFallback) {
         return {
@@ -450,6 +548,6 @@ export async function extractLashingDataFromImage(
   const durationMs = Math.max(1, Date.now() - startTime);
 
   // Domain Verification Seam
-  return verifyLashingData(rawOutput, durationMs);
+  return verifyLashingData(rawOutput, durationMs, capturedUsage);
 }
 

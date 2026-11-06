@@ -23,6 +23,15 @@ export const RawLashingInputSchema = z.object({
 
 export type RawLashingInput = z.infer<typeof RawLashingInputSchema>;
 
+export const LashingTokenUsageSchema = z.object({
+  totalTokens: z.number(),
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  imageTokens: z.number().optional(),
+});
+
+export type LashingTokenUsage = z.infer<typeof LashingTokenUsageSchema>;
+
 export const WeijieLashingReportSchema = z.object({
   teamName: z.string(),
   date: z.string(),
@@ -38,6 +47,7 @@ export const WeijieLashingReportSchema = z.object({
   discrepancyMessage: z.string().optional(),
   isHumanVerified: z.boolean().optional(),
   durationMs: z.number().optional(),
+  tokenUsage: LashingTokenUsageSchema.optional(),
 });
 
 export type WeijieLashingReport = z.infer<typeof WeijieLashingReportSchema>;

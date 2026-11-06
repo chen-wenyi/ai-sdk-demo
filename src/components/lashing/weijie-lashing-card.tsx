@@ -136,7 +136,8 @@ export function WeijieLashingCard({
         ...draft,
         isHumanVerified: true,
       },
-      report.durationMs
+      report.durationMs,
+      report.tokenUsage
     );
 
     setIsEditing(false);
@@ -304,6 +305,21 @@ export function WeijieLashingCard({
                   >
                     <Clock className="size-3 text-primary" />
                     <span>{`耗时 ${(report.durationMs / 1000).toFixed(2)}s`}</span>
+                  </Badge>
+                )}
+                {report.tokenUsage && (
+                  <Badge
+                    variant="outline"
+                    data-testid="token-usage-badge"
+                    className="text-[11px] font-mono py-0 px-1.5 h-5 border-border/80 text-muted-foreground bg-background/60 flex items-center gap-1"
+                  >
+                    <span>
+                      {`全部 Token ${report.tokenUsage.totalTokens} · 输入 ${report.tokenUsage.inputTokens}${
+                        typeof report.tokenUsage.imageTokens === "number"
+                          ? ` (图片 ${report.tokenUsage.imageTokens})`
+                          : ""
+                      } · 输出 ${report.tokenUsage.outputTokens}`}
+                    </span>
                   </Badge>
                 )}
               </span>

@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
             text: reply.text,
             model: reply.model,
             durationMs: totalDurationMs,
+            tokenUsage: reply.tokenUsage,
           },
           {
             status: 200,

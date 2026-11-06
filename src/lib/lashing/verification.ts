@@ -1,4 +1,9 @@
-import { RawLashingInput, WeijieLashingReport, LashingItem } from "./types";
+import {
+  RawLashingInput,
+  WeijieLashingReport,
+  LashingItem,
+  LashingTokenUsage,
+} from "./types";
 
 /**
  * Normalizes team name to canonical domain terminology "E伟捷"
@@ -18,7 +23,8 @@ export function normalizeTeamName(rawTeamName: string): string {
  */
 export function verifyLashingData(
   input: RawLashingInput,
-  durationMs?: number
+  durationMs?: number,
+  tokenUsage?: LashingTokenUsage
 ): WeijieLashingReport {
   const teamName = normalizeTeamName(input.teamName);
 
@@ -81,5 +87,6 @@ export function verifyLashingData(
     discrepancyMessage,
     isHumanVerified: input.isHumanVerified,
     durationMs,
+    tokenUsage,
   };
 }
