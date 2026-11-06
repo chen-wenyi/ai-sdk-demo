@@ -146,6 +146,24 @@ export default function Home() {
     }
   }, [handleSendMessage]);
 
+  const handleUpdateReport = useCallback(
+    (messageId: string, newReport: WeijieLashingReport) => {
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id === messageId) {
+            return {
+              ...msg,
+              content: `已成功定位并提取【${newReport.teamName || "E伟捷"}】行绑扎数据（已由人工核实验收）：`,
+              report: newReport,
+            };
+          }
+          return msg;
+        })
+      );
+    },
+    []
+  );
+
   const handleClearMessages = () => {
     setMessages([]);
   };
@@ -166,6 +184,7 @@ export default function Home() {
           messages={messages}
           isLoading={isLoading}
           onSelectSample={handleLoadSample}
+          onUpdateReport={handleUpdateReport}
         />
 
         {/* Bottom Fixed Prompt Input with Attachment Support */}

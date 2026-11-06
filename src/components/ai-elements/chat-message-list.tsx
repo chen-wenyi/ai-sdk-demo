@@ -29,6 +29,7 @@ export interface ChatMessageListProps {
   messages: ChatMessage[];
   isLoading?: boolean;
   onSelectSample?: () => void;
+  onUpdateReport?: (messageId: string, newReport: WeijieLashingReport) => void;
   className?: string;
 }
 
@@ -36,6 +37,7 @@ export function ChatMessageList({
   messages,
   isLoading = false,
   onSelectSample,
+  onUpdateReport,
   className,
 }: ChatMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -156,7 +158,13 @@ export function ChatMessageList({
               {/* Structured Lashing Card (Renders Directly Inside Message Bubble) */}
               {!isUser && message.report && (
                 <div className="w-full">
-                  <WeijieLashingCard report={message.report} />
+                  <WeijieLashingCard
+                    report={message.report}
+                    isVerified={message.report.isHumanVerified}
+                    onUpdateReport={(updatedReport) => {
+                      onUpdateReport?.(message.id, updatedReport);
+                    }}
+                  />
                 </div>
               )}
 

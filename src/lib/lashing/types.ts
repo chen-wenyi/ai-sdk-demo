@@ -18,6 +18,7 @@ export const RawLashingInputSchema = z.object({
   totalVehicleUnits: z.number().default(0),
   workerCount: z.number().default(0),
   leaderSignature: z.string().default(""),
+  isHumanVerified: z.boolean().optional(),
 });
 
 export type RawLashingInput = z.infer<typeof RawLashingInputSchema>;
@@ -34,6 +35,7 @@ export const WeijieLashingReportSchema = z.object({
   calculatedVehicleUnits: z.number(),
   isValid: z.boolean(),
   discrepancyMessage: z.string().optional(),
+  isHumanVerified: z.boolean().optional(),
 });
 
 export type WeijieLashingReport = z.infer<typeof WeijieLashingReportSchema>;

@@ -72,5 +72,6 @@ export function verifyLashingData(input: RawLashingInput): WeijieLashingReport {
     calculatedVehicleUnits,
     isValid,
     discrepancyMessage,
+    isHumanVerified: input.isHumanVerified,
   };
 }
