@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   extractImageFromPayload,
   extractLashingDataFromImage,
+  streamLashingExtraction,
   DEFAULT_QWEN_BASE_URL,
   DEFAULT_QWEN_MODEL,
 } from "@/lib/lashing/extractor";
@@ -44,12 +45,18 @@ export async function POST(req: NextRequest) {
     const headerMockFallback =
       headers.get("x-mock-fallback") === "true" || undefined;
 
+    const headerStream =
+      headers.get("x-stream") === "true" ||
+      headers.get("accept")?.includes("text/event-stream") ||
+      false;
+
     const url = new URL(req.url);
     const queryApiKey = url.searchParams.get("apiKey") || undefined;
     const queryBaseURL = url.searchParams.get("baseURL") || undefined;
     const queryModel = url.searchParams.get("model") || undefined;
     const queryMockFallback =
       url.searchParams.get("mockFallback") === "true" || undefined;
+    const queryStream = url.searchParams.get("stream") === "true" || false;
 
     let body: Record<string, unknown> = {};
     try {
@@ -79,6 +86,10 @@ export async function POST(req: NextRequest) {
       typeof body.mockFallback === "boolean"
         ? body.mockFallback
         : queryMockFallback ?? headerMockFallback;
+    const isStream =
+      typeof body.stream === "boolean"
+        ? body.stream
+        : queryStream || headerStream;
 
     const image = extractImageFromPayload(body);
 
@@ -90,6 +101,49 @@ export async function POST(req: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    if (isStream) {
+      const encoder = new TextEncoder();
+      const readable = new ReadableStream({
+        async start(controller) {
+          try {
+            const generator = streamLashingExtraction({
+              image,
+              apiKey,
+              baseURL,
+              model,
+              mockFallback,
+            });
+
+            for await (const event of generator) {
+              const payload = `data: ${JSON.stringify(event)}\n\n`;
+              controller.enqueue(encoder.encode(payload));
+            }
+          } catch (streamErr) {
+            const errMessage =
+              streamErr instanceof Error
+                ? streamErr.message
+                : "流式推理过程中发生未知错误";
+            const errEvent = `data: ${JSON.stringify({
+              type: "error",
+              error: errMessage,
+            })}\n\n`;
+            controller.enqueue(encoder.encode(errEvent));
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(readable, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      });
     }
 
     const report = await extractLashingDataFromImage({

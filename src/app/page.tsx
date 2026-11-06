@@ -16,11 +16,15 @@ import {
   loadStoredSettings,
 } from "@/components/ai-elements/model-selector";
 import { WeijieLashingReport } from "@/lib/lashing/types";
+import { StreamLashingEvent } from "@/lib/lashing/extractor";
 
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingStage, setStreamingStage] = useState<string>("");
+  const [streamingStageDetail, setStreamingStageDetail] = useState<string>("");
+  const [streamingCot, setStreamingCot] = useState<string>("");
   const [settings, setSettings] = useState<LashingSettings>(DEFAULT_SETTINGS);
 
   useEffect(() => {
@@ -49,10 +53,14 @@ export default function Home() {
       setMessages((prev) => [...prev, userMessage]);
       setInput("");
       setIsLoading(true);
+      setStreamingStage("step-1-preprocess");
+      setStreamingStageDetail("步骤 1/4：正在解析绑扎统计表图像负载与方向校准...");
+      setStreamingCot("");
 
       try {
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
+          "x-stream": "true",
         };
         if (settings.apiKey) {
           headers["x-qwen-api-key"] = settings.apiKey;
@@ -75,28 +83,92 @@ export default function Home() {
             baseURL: settings.baseURL || undefined,
             model: settings.model || undefined,
             mockFallback: settings.mockFallback,
+            stream: true,
           }),
         });
 
-        const data = await res.json();
+        const contentType = res.headers.get("content-type") || "";
 
-        if (!res.ok) {
-          throw new Error(data.error || "请求处理失败，请稍后重试");
+        if (contentType.includes("text/event-stream") && res.body) {
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let finalReport: WeijieLashingReport | null = null;
+          let latestCot = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const blocks = buffer.split("\n\n");
+            buffer = blocks.pop() || "";
+
+            for (const block of blocks) {
+              const line = block.trim();
+              if (!line.startsWith("data:")) continue;
+              const jsonStr = line.slice(5).trim();
+              if (!jsonStr) continue;
+
+              let event: StreamLashingEvent;
+              try {
+                event = JSON.parse(jsonStr) as StreamLashingEvent;
+              } catch {
+                continue;
+              }
+
+              if (event.type === "stage") {
+                setStreamingStage(event.stage);
+                setStreamingStageDetail(event.detail);
+              } else if (event.type === "cot_delta") {
+                latestCot = event.accumulated;
+                setStreamingCot(event.accumulated);
+              } else if (event.type === "report") {
+                finalReport = event.report;
+              } else if (event.type === "error") {
+                throw new Error(event.error);
+              }
+            }
+          }
+
+          if (!finalReport) {
+            throw new Error("流式识别结束但未收到有效的数据报表，请检查模型配置或重试");
+          }
+
+          const assistantMessage: ChatMessage = {
+            id: `assistant-${Date.now()}`,
+            role: "assistant",
+            content: `已成功定位并提取【${finalReport.teamName || "E伟捷"}】行绑扎数据，一致性比对${
+              finalReport.isValid ? "一致（校验通过）" : "存在偏差，请确认"
+            }：`,
+            report: finalReport,
+            reasoning: finalReport.reasoning || latestCot || undefined,
+            createdAt: new Date(),
+          };
+
+          setMessages((prev) => [...prev, assistantMessage]);
+        } else {
+          const data = await res.json();
+
+          if (!res.ok) {
+            throw new Error(data.error || "请求处理失败，请稍后重试");
+          }
+
+          const report: WeijieLashingReport = data.report || data;
+
+          const assistantMessage: ChatMessage = {
+            id: `assistant-${Date.now()}`,
+            role: "assistant",
+            content: `已成功定位并提取【${report.teamName || "E伟捷"}】行绑扎数据，一致性比对${
+              report.isValid ? "一致（校验通过）" : "存在偏差，请确认"
+            }：`,
+            report,
+            reasoning: report.reasoning,
+            createdAt: new Date(),
+          };
+
+          setMessages((prev) => [...prev, assistantMessage]);
         }
-
-        const report: WeijieLashingReport = data.report || data;
-
-        const assistantMessage: ChatMessage = {
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          content: `已成功定位并提取【${report.teamName || "E伟捷"}】行绑扎数据，一致性比对${
-            report.isValid ? "一致（校验通过）" : "存在偏差，请确认"
-          }：`,
-          report,
-          createdAt: new Date(),
-        };
-
-        setMessages((prev) => [...prev, assistantMessage]);
       } catch (err: unknown) {
         const message =
           err instanceof Error ? err.message : "请求视觉多模态服务发生未知异常";
@@ -110,6 +182,9 @@ export default function Home() {
         setMessages((prev) => [...prev, errorMessage]);
       } finally {
         setIsLoading(false);
+        setStreamingStage("");
+        setStreamingStageDetail("");
+        setStreamingCot("");
       }
     },
     [input, isLoading, settings]
@@ -152,6 +227,10 @@ export default function Home() {
         <ChatMessageList
           messages={messages}
           isLoading={isLoading}
+          streamingStage={streamingStage}
+          streamingStageDetail={streamingStageDetail}
+          streamingCot={streamingCot}
+          modelName={settings.model || "Qwen 3 VL"}
           onUpdateReport={handleUpdateReport}
         />
 
