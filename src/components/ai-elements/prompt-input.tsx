@@ -6,6 +6,7 @@ import {
   Paperclip,
   ArrowUp,
   X,
+  RotateCw,
   FileImage,
   Loader2,
 } from "lucide-react";
@@ -137,6 +138,35 @@ export function PromptInput({
     setAttachments([]);
   };
 
+  const handleRotateAttachment = (id: string) => {
+    setAttachments((prev) =>
+      prev.map((att) => {
+        if (att.id !== id) return att;
+        if (typeof window === "undefined") return att;
+        const img = new window.Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.height;
+          canvas.height = img.width;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.rotate((90 * Math.PI) / 180);
+          ctx.drawImage(img, -img.width / 2, -img.height / 2);
+          const rotatedUrl = canvas.toDataURL("image/jpeg", 0.95);
+          setAttachments((current) =>
+            current.map((item) =>
+              item.id === id ? { ...item, url: rotatedUrl } : item
+            )
+          );
+        };
+        img.src = att.url;
+        return att;
+      })
+    );
+  };
+
   const canSubmit = !disabled && !isLoading && (value.trim().length > 0 || attachments.length > 0);
 
   return (
@@ -182,14 +212,24 @@ export function PromptInput({
                   </p>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => handleRemoveAttachment(att.id)}
-                className="size-5 rounded-full bg-background border border-border/80 text-muted-foreground hover:text-foreground hover:bg-muted flex items-center justify-center transition-colors"
-                title="移除图片"
-              >
-                <X className="size-3" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleRotateAttachment(att.id)}
+                  className="size-6 rounded-full bg-background border border-border/80 text-muted-foreground hover:text-foreground hover:bg-muted flex items-center justify-center transition-colors"
+                  title="顺时针旋转 90° (用于扶正竖向拍摄的表格)"
+                >
+                  <RotateCw className="size-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveAttachment(att.id)}
+                  className="size-6 rounded-full bg-background border border-border/80 text-muted-foreground hover:text-foreground hover:bg-muted flex items-center justify-center transition-colors"
+                  title="移除图片"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
             </div>
           ))}
         </div>
