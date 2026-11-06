@@ -80,6 +80,6 @@ export function verifyLashingData(
     isValid,
     discrepancyMessage,
     isHumanVerified: input.isHumanVerified,
-    reasoning,
+    reasoning: reasoning || input.reasoning || undefined,
   };
 }

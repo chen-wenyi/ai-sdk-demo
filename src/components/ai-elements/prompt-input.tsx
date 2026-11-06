@@ -54,28 +54,67 @@ export function PromptInput({
     }
   }, [value]);
 
+  const compressAndNormalizeImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const rawUrl = e.target?.result as string;
+        if (!rawUrl || typeof window === "undefined") {
+          resolve(rawUrl || "");
+          return;
+        }
+        const img = new window.Image();
+        img.onload = () => {
+          const MAX_DIMENSION = 1600;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIMENSION) / width);
+              width = MAX_DIMENSION;
+            } else {
+              width = Math.round((width * MAX_DIMENSION) / height);
+              height = MAX_DIMENSION;
+            }
+          }
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(rawUrl);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.88));
+        };
+        img.onerror = () => resolve(rawUrl);
+        img.src = rawUrl;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFiles = (files: FileList | File[]) => {
     const validImageFiles = Array.from(files).filter((file) =>
       file.type.startsWith("image/")
     );
 
-    validImageFiles.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const url = e.target?.result as string;
-        if (url) {
-          setAttachments((prev) => [
-            ...prev,
-            {
-              id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-              url,
-              name: file.name,
-              size: file.size,
-            },
-          ]);
-        }
-      };
-      reader.readAsDataURL(file);
+    validImageFiles.forEach(async (file) => {
+      const url = await compressAndNormalizeImage(file);
+      if (url) {
+        setAttachments((prev) => [
+          ...prev,
+          {
+            id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            url,
+            name: file.name,
+            size: file.size,
+          },
+        ]);
+      }
     });
   };
 

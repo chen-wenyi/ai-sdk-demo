@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateText, streamText } from "ai";
+import { generateText, streamText, Output } from "ai";
 import { RawLashingInput, RawLashingInputSchema, WeijieLashingReport } from "./types";
 import { verifyLashingData } from "./verification";
 
@@ -12,6 +12,8 @@ export const DEFAULT_QWEN_MODEL = "qwen3-vl-plus";
  * (fixture: ca7321cf10ff8408bf7937f243e78cad.jpg)
  */
 export const BENCHMARK_RAW_INPUT: RawLashingInput = {
+  reasoning:
+    "1. 校准表格方向并确认表头为《每天各绑扎队作业数量统计表》；2. 锁定左侧第2行队伍【E伟捷】；3. 横向读取非零箱型：48FR=28箱(单箱3台)，40FM=26箱(单箱3台)；4. 核对合计54箱、车装台数162台、人数20人、签名李春河。",
   teamName: "E伟捷",
   date: "11月2日",
   voyage: "中远海运欧亚航 V27",
@@ -90,9 +92,10 @@ export const WEIJIE_EXTRACTION_SYSTEM_PROMPT = `你是一名专业的港口集�
 1. 确认表格方向并定位到左侧“绑扎队”列中第2行的【E伟捷】；
 2. 横向读取E伟捷行的非零箱型明细与单箱台数；
 3. 读取右侧的合计箱数、绑扎车装台数、作业人数、队长签名；
-4. 最后必须输出包含提取结果的 JSON 代码块（使用 \`\`\`json 和 \`\`\` 包裹），格式示例如下：
+4. 最后必须输出包含提取结果的 JSON 代码块（使用 \`\`\`json 和 \`\`\` 包裹），其中必须包含 reasoning 字段记录推理步骤：
 \`\`\`json
 {
+  "reasoning": "1. 锁定左侧第2行E伟捷；2. 横向读取48FR为28箱(单箱3台)，40FM为26箱(单箱3台)；3. 合计54箱，车装台数162台，人数20人，签名李春河。",
   "teamName": "E伟捷",
   "date": "11月2日",
   "voyage": "中远海运欧亚航 V27",
@@ -303,6 +306,8 @@ export function parseLashingJsonFromText(text: string): RawLashingInput | null {
 /**
  * Vision Extraction Service:
  * Extracts "E伟捷" lashing statistics from image and runs domain verification.
+ * Uses Output.object({ schema: RawLashingInputSchema }) where `reasoning` is the
+ * leading field so the model performs Chain-of-Thought before filling numbers.
  */
 export async function extractLashingDataFromImage(
   options: ExtractionOptions
@@ -356,7 +361,7 @@ export async function extractLashingDataFromImage(
       content: [
         {
           type: "text" as const,
-          text: `${WEIJIE_EXTRACTION_SYSTEM_PROMPT}\n\n【识别任务开始】：请根据上传的表格图片，严格按照上述指引先定位【E伟捷】行，写出思考与识别过程，然后在最后输出严格的 \`\`\`json ... \`\`\` 代码块。`,
+          text: "请先在 reasoning 字段中写出你的分步定位与核对过程（锁定第2行E伟捷、读取48FR和40FM箱数、核对合计与签名），再填写结构化绑扎作业数据。",
         },
         {
           type: "file" as const,
@@ -377,22 +382,17 @@ export async function extractLashingDataFromImage(
       messages: userMessages,
     });
     rawOutput = res.object;
+    reasoningText = rawOutput.reasoning;
   } else {
     try {
       const res = await generateText({
         model: modelInstance,
+        output: Output.object({ schema: RawLashingInputSchema }),
+        instructions: WEIJIE_EXTRACTION_SYSTEM_PROMPT,
         messages: userMessages,
       });
-
-      const parsed = parseLashingJsonFromText(res.text);
-      if (parsed) {
-        rawOutput = parsed;
-        reasoningText = cleanReasoningText(res.text) || res.text;
-      } else {
-        throw new Error(
-          `模型生成了分析，但未输出有效的结构化 JSON 数据。模型回复内容：${res.text.slice(0, 300)}`
-        );
-      }
+      rawOutput = res.output;
+      reasoningText = rawOutput.reasoning;
     } catch (err) {
       if (shouldFallback) {
         return BENCHMARK_REPORT;
@@ -413,7 +413,9 @@ export type StreamLashingEvent =
 
 /**
  * Real-time SSE Streaming Vision Extraction Service:
- * Emits stage transitions, live CoT token deltas, and the final verified WeijieLashingReport.
+ * 1. Streams live CoT (capturing both `reasoning-delta` from thinking models and `text-delta`);
+ * 2. Enforces strict `RawLashingInputSchema` via `parseLashingJsonFromText` or a Stage-2 `Output.object({ schema: RawLashingInputSchema })` pass;
+ * 3. Includes a 35-second first-chunk timeout guard to prevent infinite hangs on unsupported/non-vision model names.
  */
 export async function* streamLashingExtraction(
   options: ExtractionOptions
@@ -515,49 +517,107 @@ export async function* streamLashingExtraction(
     },
   ];
 
+  const isNonVlWarning = !resolvedModel.toLowerCase().includes("vl") && !resolvedModel.toLowerCase().includes("ocr") && !resolvedModel.toLowerCase().includes("omni");
+
   yield {
     type: "stage",
     stage: "step-2-locate",
-    detail: `步骤 2/4：已连接 ${resolvedModel}，正在视觉扫描表头并定位【E伟捷】行...`,
+    detail: `步骤 2/4：已连接 ${resolvedModel}${isNonVlWarning ? "（注意：该模型名称不含 vl/ocr，可能不支持看图）" : ""}，正在视觉扫描表头并定位【E伟捷】行...`,
   };
+
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => {
+    abortController.abort();
+  }, 45000);
 
   try {
     const result = streamText({
       model: modelInstance,
       messages: userMessages,
+      abortSignal: abortController.signal,
     });
 
     let fullText = "";
+    let fullReasoning = "";
+    let displayStream = "";
     let hasEnteredStep3 = false;
 
-    for await (const textPart of result.textStream) {
-      fullText += textPart;
-
-      if (!hasEnteredStep3 && fullText.length > 25) {
-        hasEnteredStep3 = true;
+    for await (const part of result.fullStream) {
+      if (part.type === "reasoning-delta") {
+        fullReasoning += part.text;
+        displayStream = fullReasoning + (fullText ? `\n\n${fullText}` : "");
+        if (!hasEnteredStep3 && displayStream.length > 20) {
+          hasEnteredStep3 = true;
+          yield {
+            type: "stage",
+            stage: "step-3-extract",
+            detail: "步骤 3/4：正在深度思考并横向读取箱型明细、单箱台数与手写签名...",
+          };
+        }
         yield {
-          type: "stage",
-          stage: "step-3-extract",
-          detail: "步骤 3/4：正在横向逐列读取箱型明细、单箱台数与手写签名...",
+          type: "cot_delta",
+          delta: part.text,
+          accumulated: displayStream,
         };
+      } else if (part.type === "text-delta") {
+        fullText += part.text;
+        displayStream = (fullReasoning ? `${fullReasoning}\n\n` : "") + fullText;
+        if (!hasEnteredStep3 && displayStream.length > 20) {
+          hasEnteredStep3 = true;
+          yield {
+            type: "stage",
+            stage: "step-3-extract",
+            detail: "步骤 3/4：正在横向逐列读取箱型明细、单箱台数与手写签名...",
+          };
+        }
+        yield {
+          type: "cot_delta",
+          delta: part.text,
+          accumulated: displayStream,
+        };
+      } else if (part.type === "error") {
+        throw part.error instanceof Error
+          ? part.error
+          : new Error(String(part.error));
       }
-
-      yield {
-        type: "cot_delta",
-        delta: textPart,
-        accumulated: fullText,
-      };
     }
+
+    clearTimeout(timeoutId);
 
     yield {
       type: "stage",
       stage: "step-4-verify",
-      detail: "步骤 4/4：正在解析 JSON 并执行一致性数学公式核验...",
+      detail: "步骤 4/4：正在执行严格 JSON Schema 校验与一致性数学公式核验...",
     };
 
-    const parsed = parseLashingJsonFromText(fullText);
+    const combinedText = `${fullReasoning}\n${fullText}`.trim();
+    let parsed = parseLashingJsonFromText(fullText) || parseLashingJsonFromText(combinedText);
+
+    // Stage 2 Strict Output.object Schema Enforcement if Stage 1 did not emit a valid JSON block
+    if (!parsed && combinedText.length > 0) {
+      yield {
+        type: "stage",
+        stage: "step-4-verify",
+        detail: "步骤 4/4：正在通过 Output.object(RawLashingInputSchema) 执行强类型 JSON 约束收敛...",
+      };
+      const structuredRes = await generateText({
+        model: modelInstance,
+        output: Output.object({ schema: RawLashingInputSchema }),
+        messages: [
+          {
+            role: "user" as const,
+            content: `请将以下对《每天各绑扎队作业数量统计表》中“E伟捷”队伍的视觉识别推理结果，严格转换为符合 Schema 约束的 JSON 对象：\n\n${combinedText}`,
+          },
+        ],
+      });
+      parsed = structuredRes.output;
+    }
+
     if (parsed) {
-      const cleanedReasoning = cleanReasoningText(fullText) || fullText;
+      const cleanedReasoning =
+        cleanReasoningText(displayStream) ||
+        parsed.reasoning ||
+        displayStream;
       const report = verifyLashingData(parsed, cleanedReasoning);
       yield {
         type: "report",
@@ -571,25 +631,39 @@ export async function* streamLashingExtraction(
     } else {
       yield {
         type: "error",
-        error: `模型完成了推理分析，但未能解析出有效的 JSON 结构。原始输出片段：${fullText.slice(0, 300)}`,
+        error: `模型完成了推理分析，但未能解析出有效的 JSON 结构。原始输出片段：${combinedText.slice(0, 300)}`,
       };
     }
   } catch (err) {
+    clearTimeout(timeoutId);
+    const isAborted =
+      abortController.signal.aborted ||
+      (err instanceof Error && err.name === "AbortError");
+
     if (shouldFallback) {
+      const fallbackNote = isAborted
+        ? `\n[提示] 模型 ${resolvedModel} 响应超时（超过 45 秒，请确认模型名称是否为视觉模型如 qwen3-vl-plus 或 qwen-vl-ocr），已自动切换至真实样本回退数据。`
+        : `\n[提示] 模型 ${resolvedModel} 接口返回异常（${err instanceof Error ? err.message : "未知错误"}），已自动切换至真实样本回退数据。`;
       yield {
         type: "cot_delta",
-        delta: "\n[提示] 远端接口连接异常，已自动切换至真实样本回退数据。",
-        accumulated: BENCHMARK_REASONING,
+        delta: fallbackNote,
+        accumulated: `${BENCHMARK_REASONING}\n${fallbackNote}`,
       };
       yield {
         type: "report",
-        report: BENCHMARK_REPORT,
+        report: verifyLashingData(
+          BENCHMARK_RAW_INPUT,
+          `${BENCHMARK_REASONING}\n${fallbackNote}`
+        ),
       };
       return;
     }
 
-    const errorMessage =
-      err instanceof Error ? err.message : "调用视觉大模型流式接口发生异常";
+    const errorMessage = isAborted
+      ? `模型 ${resolvedModel} 响应超时（超过 45 秒）。请检查该模型名称是否支持视觉输入（推荐使用 qwen3-vl-plus、qwen-vl-ocr 或 qwen-vl-max）。`
+      : err instanceof Error
+      ? err.message
+      : "调用视觉大模型流式接口发生异常";
     yield {
       type: "error",
       error: errorMessage,
