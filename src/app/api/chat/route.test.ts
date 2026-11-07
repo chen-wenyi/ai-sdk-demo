@@ -168,4 +168,28 @@ describe("API Route: /api/chat", () => {
     expect(typeof data.durationMs).toBe("number");
     expect(data.durationMs).toBeGreaterThan(0);
   });
+
+  it("POST /api/chat should support rawModelMode with image and return native model text without schema or card", async () => {
+    const req = new NextRequest("http://localhost:3000/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-mock-fallback": "true",
+      },
+      body: JSON.stringify({
+        rawModelMode: true,
+        image: "data:image/jpeg;base64,sampleDirectData",
+        prompt: "提取图片中所有表格里关于 E伟捷 队伍的数据",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    const data = await res.json();
+    expect(data.mode).toBe("text");
+    expect(data.rawModelMode).toBe(true);
+    expect(data.text).toContain("提取图片中所有表格里关于 E伟捷 队伍的数据");
+    expect(data.report).toBeUndefined();
+  });
 });

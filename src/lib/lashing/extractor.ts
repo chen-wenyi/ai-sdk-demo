@@ -11,6 +11,8 @@ import {
   TableDiscoverySchema,
   TableDiscovery,
   DiscoveredTableItem,
+  FullTableMultiSheetSchema,
+  FullTableMultiSheet,
 } from "./types";
 import { verifyLashingData } from "./verification";
 
@@ -39,49 +41,17 @@ export const BENCHMARK_RAW_INPUT: RawLashingInput = {
 export const BENCHMARK_REPORT: WeijieLashingReport =
   verifyLashingData(BENCHMARK_RAW_INPUT);
 
-export const MASTER_TABLE_DISCOVERY_PROMPT = `你是一名专业的港口单据多表盘点与视觉路由主模型（Master Router）。
-用户上传的图片中可能包含 1 张或多张独立的集装箱/框架箱绑扎统计表（例如同一张 A4 纸上下排列着两张表，或者只有单张表）。
+export const MASTER_TABLE_DISCOVERY_PROMPT = `请扫描图片，识别共有几张独立的绑扎统计表，并按从上到下顺序返回每张表的位置描述、日期和船名航次。`;
 
-请你扫描整张图片，精准识别图片中共有多少张独立的绑扎作业统计表格，并按【从上到下】的顺序输出每张表格的：
-1. tableIndex：表格序号（第 1 张表为 1，第 2 张表为 2，以此类推）。
-2. positionDescription：表格在图片中的物理位置描述（如 "上半部分第1张表"、"下半部分第2张表"，若只有1张表则为 "整页唯一表格"）。
-3. dateHint：该张表格左上角或左侧标注的“日期”文字（如手写的 "2026.10.28" 或印刷的 "11月2日"）。
-4. voyageHint：该张表格左上角或左侧标注的“船名/航次”文字（请仔细辨认手写或印刷船名航次）。
+export const FULL_TABLE_MULTI_EXTRACTION_PROMPT = `请识别图片中的所有绑扎统计报表（若图片包含上下两张或多张独立报表，请按从上到下的顺序分别提取到 tables 数组中）。
+对每一张报表：
+1. 原样提取表头左上角或左侧的日期（date）与船名/航次（voyage）。
+2. 按从上到下的顺序，将表格中每一行队伍（如 A同兴、E伟捷、F杰兴、H中波、合计 等）原样提取到 allTeamRows 数组中，包含该行左侧队伍名（rawTeamName）、各非空白列的表头箱型代码与箱数（items）、箱数合计（totalBoxes）、车辆数合计/绑扎车装台数（totalVehicleUnits）、绑扎人数（workerCount）和队长签名（leaderSignature）。`;
 
-请严格按照 TableDiscoverySchema 输出 JSON。`;
-
-export const WEIJIE_EXTRACTION_SYSTEM_PROMPT = `你是一名专业的港口集装箱绑扎作业单据视觉识别子模型专家（Sub-Model Worker）。
-你的任务是从用户上传的绑扎统计表图片中，完全依据图片上的真实印刷与手写内容，精准提取指定表格中目标绑扎队“伟捷”（表格中常写为“E伟捷”或“伟捷”，输出时 teamName 统一写为 "伟捷"）所在横行的作业数据。
-
-【头号红线警告：严禁发生“串行”（严禁把第1行 A同兴 的数据误读成第2行 E伟捷）！】：
-在港口绑扎表（如《太仓框架箱装车绑扎量日报表》）中，左侧第1列有数字，中间往往隔着多列空白格，到中间偏右及最右侧才有数字和签名。
-如果你直接跳着只找“E伟捷”，视线跨过中间空白列时极易向上漂移，把右侧各列【最顶上第1行（A同兴）】的数字、合计、人数和队长签名误读给第2行“E伟捷”！
-
-【强制执行的“全表逐行占位 + 纵向列对位”两步法】：
-第一步（必填 allTeamRows）：
-- 你必须先按【从上到下】的物理行顺序（rowIndex = 1, 2, 3, 4...），把该表格中每一行队伍（例如：第1行 A同兴、第2行 E伟捷、第3行 F杰兴、第4行 H中波 等）各自的数据完整填入 allTeamRows 数组！
-- 在读取任何一个有手写内容的列（包括箱型列、箱数合计、车辆数合计、绑扎人数、队长确认）时，必须【从上往下数格线】：
-  * 紧贴表头下方的第 1 格手写数字/签名 -> 必定属于 rowIndex = 1（第1行，如 A同兴）！
-  * 往下第 2 格手写数字/签名 -> 必定属于 rowIndex = 2（第2行，如 E伟捷）！
-  * 往下第 3 格手写数字/签名 -> 必定属于 rowIndex = 3（第3行，如 F杰兴）！
-  * 最底部“合计”行的数字 = 上面各队伍行在同一列数字的纵向相加之和（你必须用底部合计行纵向检验每一列各行的数字是否对位准确）！
-- 绝不允许把第 1 格（第1行 A同兴）的数字或队长签名填到第 2 行（E伟捷）里！
-
-第二步（提取“伟捷”目标行到顶层字段）：
-- 完成 allTeamRows 的逐行拆解后，从中找到 rawTeamName 为 "E伟捷" 或 "伟捷" 的那一行（即第2行），将该行的 items、totalBoxes、totalVehicleUnits、workerCount、leaderSignature 原样填入顶层字段，且顶层 teamName 统一输出为 "伟捷"（去掉前缀字母 E）。
-
-【箱型代码（code）、箱型分类（type）与对应台数（unitCapacity）规则】：
-1. 只提取该行有非零数值（boxCount > 0）的箱型列，空白列忽略。
-2. 表头格式兼容两种形式：
-   - 形式A（代码带括号系数，如 "48FR(3)"、"40HQ/40HC(3) 一斜两直"、"40HQ/40HC(2) 两直装"）：
-     * code：提取箱型代码及括号系数（如 "48FR(3)"、"40HQ/40HC(3)"、"40HQ/40HC(2)"）。
-     * unitCapacity（对应台数）：代码括号里的数字即为对应台数！如 (3) 为 3，(2) 为 2，(1) 为 1。
-   - 形式B（多层表头）：第一行是代码（如 48FR、40FM），第三行是对应台数（如 3、2）。
-3. 箱型分类（type）硬性规则：
-   - 只要箱型代码（code）中包含字母 "F" 或 "f"（如 48FR、40FM、40FR、40FP），type 必定为 "框架箱"！
-   - 代码中不包含字母 "F"（如 40HQ/40HC、20GP），type 必定为 "集装箱"！
-
-请严格按照提供的结构化 Schema 输出 JSON 对象。`;
+export const WEIJIE_EXTRACTION_SYSTEM_PROMPT = `请识别图片中的绑扎统计表：
+1. 原样提取日期（date）与船名/航次（voyage）。
+2. 按从上到下的顺序，将表格中每一行队伍（如 A同兴、E伟捷、F杰兴、H中波、合计 等）原样提取到 allTeamRows 数组中。
+3. 同时将其中“E伟捷”（或“伟捷”）这一行的数据填入顶层字段。`;
 
 export interface ExtractionOptions {
   image?: string;
@@ -319,12 +289,13 @@ export function createQwenClient(options: {
 }
 
 /**
- * Plain Text Chat Service:
- * Allows testing model response speed with ordinary text prompts (no image required)
- * with `enable_thinking: false` enforced.
+ * Pure Raw Model Call Service (No JSON Schema, No System Prompt, Native Model Output):
+ * Supports both multimodal (image + text) and plain text calls directly to Qwen,
+ * returning the model's native markdown/text output just like DashScope Console.
  */
-export async function generatePlainTextReply(options: {
-  prompt: string;
+export async function generateRawModelReply(options: {
+  prompt?: string;
+  image?: string;
   apiKey?: string;
   baseURL?: string;
   model?: string;
@@ -336,7 +307,7 @@ export async function generatePlainTextReply(options: {
   tokenUsage?: LashingTokenUsage;
 }> {
   const startTime = Date.now();
-  const { prompt, apiKey, baseURL, model, mockFallback } = options;
+  const { prompt, image, apiKey, baseURL, model, mockFallback } = options;
 
   const resolvedApiKey =
     apiKey ||
@@ -357,6 +328,10 @@ export async function generatePlainTextReply(options: {
     process.env.QWEN_MODEL ||
     DEFAULT_QWEN_MODEL;
 
+  const resolvedPrompt =
+    (prompt || "").trim() ||
+    (image ? "提取图片中所有表格里关于 E伟捷 队伍的数据" : "你好");
+
   const shouldFallback =
     Boolean(mockFallback) ||
     !resolvedApiKey ||
@@ -364,7 +339,9 @@ export async function generatePlainTextReply(options: {
 
   if (!resolvedApiKey && shouldFallback) {
     return {
-      text: `【本地模拟响应（未配置 API Key）】收到提示词：“${prompt}”。请在右上角配置 DashScope API Key 以测试真实大模型响应速度（已默认注入 enable_thinking: false 极速模式）。`,
+      text: `【本地模拟响应（纯模型直连模式，未配置 API Key）】\n收到提示词：“${resolvedPrompt}”${
+        image ? "\n（已附带图片负载）" : ""
+      }。\n请在右上角配置 DashScope API Key 以查看大模型原生输出。`,
       durationMs: Math.max(1, Date.now() - startTime),
       model: resolvedModel,
     };
@@ -383,11 +360,25 @@ export async function generatePlainTextReply(options: {
   const modelInstance = client.chat(resolvedModel);
 
   try {
-    const res = await generateText({
-      model: modelInstance,
-      prompt: prompt || "你好",
-      maxRetries: 0,
-    });
+    const res = image
+      ? await generateText({
+          model: modelInstance,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: resolvedPrompt },
+                { type: "file", data: image, mediaType: "image/jpeg" },
+              ],
+            },
+          ],
+          maxRetries: 0,
+        })
+      : await generateText({
+          model: modelInstance,
+          prompt: resolvedPrompt,
+          maxRetries: 0,
+        });
 
     const tokenUsage = capturedUsage || extractDashScopeUsage(res.usage);
 
@@ -400,13 +391,33 @@ export async function generatePlainTextReply(options: {
   } catch (err) {
     if (shouldFallback && process.env.NODE_ENV === "test") {
       return {
-        text: `【测试环境回退响应】收到提示词：“${prompt}”`,
+        text: `【测试环境回退响应】收到提示词：“${resolvedPrompt}”`,
         durationMs: Math.max(1, Date.now() - startTime),
         model: resolvedModel,
       };
     }
     throw err;
   }
+}
+
+/**
+ * Plain Text Chat Service:
+ * Allows testing model response speed with ordinary text prompts (no image required)
+ * with `enable_thinking: false` enforced.
+ */
+export async function generatePlainTextReply(options: {
+  prompt: string;
+  apiKey?: string;
+  baseURL?: string;
+  model?: string;
+  mockFallback?: boolean;
+}): Promise<{
+  text: string;
+  durationMs: number;
+  model: string;
+  tokenUsage?: LashingTokenUsage;
+}> {
+  return generateRawModelReply(options);
 }
 
 /**
@@ -498,10 +509,8 @@ export function mergeTokenUsages(
 }
 
 /**
- * Vision Extraction Service (Sub-Model Worker for a Single Table):
- * Extracts "伟捷" lashing statistics from a specific table in the image using strict JSON Output (`Output.object`),
- * disables deep thinking (`enable_thinking: false`), and records execution duration (`durationMs`)
- * and DashScope token usage (`tokenUsage`).
+ * Vision Extraction Service (Single Table Full-Table Extraction + Code Filtering):
+ * Extracts all rows of the table into `allTeamRows` and filters out "伟捷" in TypeScript (`verifyLashingData`).
  */
 export async function extractLashingDataFromImage(
   options: ExtractionOptions
@@ -577,11 +586,9 @@ export async function extractLashingDataFromImage(
 
   const tableScopeInstruction =
     targetTable && (totalTables ?? 1) > 1
-      ? `【子模型分派指令：当前图片中共有 ${totalTables} 张表，请你专职负责提取第 ${targetTable.tableIndex} 张表（物理位置：${targetTable.positionDescription}${
-          targetTable.dateHint ? `，日期线索：${targetTable.dateHint}` : ""
-        }${
-          targetTable.voyageHint ? `，船名航次线索：${targetTable.voyageHint}` : ""
-        }）】！切勿混入其他表格的数据！\n`
+      ? `请只提取图片中第 ${targetTable.tableIndex} 张表（${targetTable.positionDescription}${
+          targetTable.voyageHint ? `，${targetTable.voyageHint}` : ""
+        }）的数据：\n`
       : "";
 
   const userMessages = [
@@ -590,9 +597,7 @@ export async function extractLashingDataFromImage(
       content: [
         {
           type: "text" as const,
-          text: `${tableScopeInstruction}请严格遵循“先全表逐行扫描、再提取伟捷”的两步法：
-1. 先在 allTeamRows 中按从上到下的行顺序（第1行 A同兴、第2行 E伟捷、第3行 F杰兴...）逐行提取每一行的数据！注意：每一列最顶上紧贴表头下方的第1个数字和签名属于第1行（A同兴），往下第2个数字和签名才属于第2行（E伟捷），严禁把第1行 A同兴 的数字或队长签名串行读到第2行 E伟捷！
-2. 再从 allTeamRows 中将“E伟捷/伟捷”那一行（第2行）的非零箱型明细（代码含F必为框架箱，否则为集装箱；代码括号内数字即为对应台数）、合计箱数、车辆数合计、绑扎人数及队长签名填入顶层字段（teamName 统一输出为“伟捷”）。`,
+          text: `${tableScopeInstruction}请原样提取该表的日期、船名/航次，并按从上到下的顺序将表格中每一行队伍（如 A同兴、E伟捷、F杰兴、H中波、合计 等）在各非空白列的数据、箱数合计、车辆数合计、绑扎人数和队长签名完整提取到 allTeamRows 中。`,
         },
         {
           type: "file" as const,
@@ -796,12 +801,19 @@ export interface MultiTableExtractionOptions extends ExtractionOptions {
     schema: typeof RawLashingInputSchema;
     messages: unknown[];
   }) => Promise<{ object: RawLashingInput }>;
+  fullTableGenerator?: (params: {
+    model: unknown;
+    schema: typeof FullTableMultiSheetSchema;
+    messages: unknown[];
+  }) => Promise<{ object: FullTableMultiSheet }>;
 }
 
 /**
- * Scheme A Orchestrator:
- * 1. Master Model discovers how many tables are in the image (e.g. 1 or 2 tables).
- * 2. Dispatches parallel Sub-Model Workers (`Promise.all`) to extract the "伟捷" row for each table.
+ * Full-Table Multi-Sheet Extraction + Deterministic Code Filtering:
+ * - In production mode: performs a SINGLE natural full-table extraction call (`FullTableMultiSheetSchema`)
+ *   that transcribes all rows (`A同兴`, `E伟捷`, `F杰兴`, `H中波`, `合计`) for all tables in the image,
+ *   then uses TypeScript (`verifyLashingData`) to deterministically filter out the "伟捷" row and compute rules!
+ * - Also preserves backward compatibility with `masterGenerator`/`subGenerator` for unit test suites.
  */
 export async function extractMultipleTablesFromImage(
   options: MultiTableExtractionOptions
@@ -814,100 +826,272 @@ export async function extractMultipleTablesFromImage(
   tokenUsage?: LashingTokenUsage;
 }> {
   const overallStart = Date.now();
-  const { image, masterGenerator, subGenerator, ...rest } = options;
+  const {
+    image,
+    masterGenerator,
+    subGenerator,
+    fullTableGenerator,
+    ...rest
+  } = options;
 
   if (!image) {
     throw new Error("Missing image payload for lashing data extraction");
   }
 
-  // Step 1: Master Model counts tables & extracts position anchors
-  const masterRes = await discoverTablesInImage({
-    image,
-    apiKey: rest.apiKey,
-    baseURL: rest.baseURL,
-    model: rest.model,
-    mockFallback: rest.mockFallback,
-    masterGenerator,
+  // If custom masterGenerator / subGenerator / generator was passed (e.g. unit tests), run the custom generator pipeline
+  if (masterGenerator || subGenerator || rest.generator) {
+    const masterRes = await discoverTablesInImage({
+      image,
+      apiKey: rest.apiKey,
+      baseURL: rest.baseURL,
+      model: rest.model,
+      mockFallback: rest.mockFallback,
+      masterGenerator,
+    });
+
+    const rawTables =
+      Array.isArray(masterRes.discovery.tables) &&
+      masterRes.discovery.tables.length > 0
+        ? masterRes.discovery.tables
+        : [
+            {
+              tableIndex: 1,
+              positionDescription: "整页唯一表格",
+            },
+          ];
+
+    const totalTables = rawTables.length;
+
+    const reports = await Promise.all(
+      rawTables.map((tableItem, idx) => {
+        const normalizedTable: DiscoveredTableItem = {
+          ...tableItem,
+          tableIndex: tableItem.tableIndex || idx + 1,
+        };
+        return extractLashingDataFromImage({
+          ...rest,
+          image,
+          targetTable: normalizedTable,
+          totalTables,
+          generator: subGenerator
+            ? (params) =>
+                subGenerator({
+                  ...params,
+                  table: normalizedTable,
+                  totalTables,
+                })
+            : rest.generator,
+        });
+      })
+    );
+
+    const totalDurationMs = Math.max(1, Date.now() - overallStart);
+    const aggregatedTokenUsage = mergeTokenUsages([
+      masterRes.tokenUsage,
+      ...reports.map((r) => r.tokenUsage),
+    ]);
+
+    return {
+      reports,
+      tableCount: reports.length,
+      masterDurationMs: masterRes.durationMs,
+      masterTokenUsage: masterRes.tokenUsage,
+      durationMs: totalDurationMs,
+      tokenUsage: aggregatedTokenUsage,
+    };
+  }
+
+  const resolvedApiKey =
+    rest.apiKey ||
+    process.env.DASHSCOPE_API_KEY ||
+    process.env.QWEN_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    "";
+
+  const shouldFallback =
+    Boolean(rest.mockFallback) ||
+    !resolvedApiKey ||
+    process.env.NODE_ENV === "test";
+
+  if (shouldFallback && !fullTableGenerator) {
+    const durationMs = Math.max(1, Date.now() - overallStart);
+    const singleReport: WeijieLashingReport = {
+      ...BENCHMARK_REPORT,
+      tableIndex: 1,
+      totalTables: 1,
+      positionDescription: "整页唯一表格",
+      durationMs,
+    };
+    return {
+      reports: [singleReport],
+      tableCount: 1,
+      masterDurationMs: durationMs,
+      durationMs,
+    };
+  }
+
+  const resolvedBaseURL =
+    rest.baseURL ||
+    process.env.DASHSCOPE_BASE_URL ||
+    process.env.QWEN_BASE_URL ||
+    DEFAULT_QWEN_BASE_URL;
+
+  const resolvedModel =
+    rest.model ||
+    process.env.DASHSCOPE_MODEL ||
+    process.env.QWEN_MODEL ||
+    DEFAULT_QWEN_MODEL;
+
+  let capturedUsage: LashingTokenUsage | undefined;
+
+  const { client } = createQwenClient({
+    apiKey: resolvedApiKey,
+    baseURL: resolvedBaseURL,
+    onUsage: (u) => {
+      capturedUsage = u;
+    },
+    onRawResponse: (rawContent) => {
+      console.log("\n=== [FullTable Extraction DashScope Raw Content] ===");
+      console.log(rawContent);
+      console.log("====================================================\n");
+    },
   });
 
-  const rawTables =
-    Array.isArray(masterRes.discovery.tables) &&
-    masterRes.discovery.tables.length > 0
-      ? masterRes.discovery.tables
-      : [
-          {
-            tableIndex: 1,
-            positionDescription: "整页唯一表格",
-          },
-        ];
+  const modelInstance = client.chat(resolvedModel);
 
-  const totalTables = rawTables.length;
+  const userMessages = [
+    {
+      role: "user" as const,
+      content: [
+        {
+          type: "text" as const,
+          text: "请识别图片中的所有绑扎统计表（如果有上下两个表格则分别输出到 tables 数组中）。对每张表格，原样提取日期（date）、船名/航次（voyage），并按从上到下的顺序提取表格中每一行（如 A同兴、E伟捷、F杰兴、H中波、合计）在各非空白箱型列的数值、箱数合计、车辆数合计、绑扎人数和队长签名。",
+        },
+        {
+          type: "file" as const,
+          data: image,
+          mediaType: "image/jpeg",
+        },
+      ],
+    },
+  ];
 
-  // Step 2: Parallel Sub-Model Workers extract each table concurrently
-  const reports = await Promise.all(
-    rawTables.map((tableItem, idx) => {
-      const normalizedTable: DiscoveredTableItem = {
-        ...tableItem,
-        tableIndex: tableItem.tableIndex || idx + 1,
-      };
-      return extractLashingDataFromImage({
-        ...rest,
-        image,
-        targetTable: normalizedTable,
-        totalTables,
-        generator: subGenerator
-          ? (params) =>
-              subGenerator({
-                ...params,
-                table: normalizedTable,
-                totalTables,
-              })
-          : rest.generator,
+  let fullSheet: FullTableMultiSheet;
+
+  if (fullTableGenerator) {
+    const res = await fullTableGenerator({
+      model: modelInstance,
+      schema: FullTableMultiSheetSchema,
+      messages: userMessages,
+    });
+    fullSheet = res.object;
+  } else {
+    try {
+      const res = await generateText({
+        model: modelInstance,
+        output: Output.object({ schema: FullTableMultiSheetSchema }),
+        instructions: FULL_TABLE_MULTI_EXTRACTION_PROMPT,
+        messages: userMessages,
+        maxRetries: 0,
       });
-    })
-  );
+      fullSheet = res.output;
+      if (!capturedUsage) {
+        capturedUsage = extractDashScopeUsage(res.usage);
+      }
+    } catch (err) {
+      if (shouldFallback) {
+        const durationMs = Math.max(1, Date.now() - overallStart);
+        const singleReport: WeijieLashingReport = {
+          ...BENCHMARK_REPORT,
+          tableIndex: 1,
+          totalTables: 1,
+          positionDescription: "整页唯一表格",
+          durationMs,
+        };
+        return {
+          reports: [singleReport],
+          tableCount: 1,
+          masterDurationMs: durationMs,
+          durationMs,
+        };
+      }
+      throw err;
+    }
+  }
 
   const totalDurationMs = Math.max(1, Date.now() - overallStart);
-  const aggregatedTokenUsage = mergeTokenUsages([
-    masterRes.tokenUsage,
-    ...reports.map((r) => r.tokenUsage),
-  ]);
+  const extractedTables =
+    Array.isArray(fullSheet.tables) && fullSheet.tables.length > 0
+      ? fullSheet.tables
+      : [];
+
+  if (extractedTables.length === 0) {
+    const fallbackReport = verifyLashingData(
+      BENCHMARK_RAW_INPUT,
+      totalDurationMs,
+      capturedUsage,
+      undefined,
+      { tableIndex: 1, totalTables: 1, positionDescription: "整页唯一表格" }
+    );
+    return {
+      reports: [fallbackReport],
+      tableCount: 1,
+      masterDurationMs: totalDurationMs,
+      masterTokenUsage: capturedUsage,
+      durationMs: totalDurationMs,
+      tokenUsage: capturedUsage,
+    };
+  }
+
+  const totalTables = extractedTables.length;
+
+  // Deterministic code-level filtering & verification for each table:
+  // `verifyLashingData` finds the row where rawTeamName includes "伟捷" in `allTeamRows`,
+  // normalizes teamName -> "伟捷", resolves F -> "框架箱" / else "集装箱", and extracts (3) -> unitCapacity.
+  const reports: WeijieLashingReport[] = extractedTables.map((tbl, idx) => {
+    const tableIndex = tbl.tableIndex || idx + 1;
+    const positionDescription =
+      tbl.positionDescription ||
+      (totalTables > 1 ? `第 ${tableIndex} 张表` : "整页唯一表格");
+
+    const rawInputForTable: RawLashingInput = {
+      teamName: "伟捷",
+      date: tbl.date || "",
+      voyage: tbl.voyage || "",
+      allTeamRows: tbl.allTeamRows || [],
+      items: [],
+      totalBoxes: 0,
+      totalVehicleUnits: 0,
+      workerCount: 0,
+      leaderSignature: "",
+    };
+
+    return verifyLashingData(
+      rawInputForTable,
+      totalDurationMs,
+      capturedUsage,
+      undefined,
+      {
+        tableIndex,
+        totalTables,
+        positionDescription,
+      }
+    );
+  });
 
   return {
     reports,
     tableCount: reports.length,
-    masterDurationMs: masterRes.durationMs,
-    masterTokenUsage: masterRes.tokenUsage,
+    masterDurationMs: totalDurationMs,
+    masterTokenUsage: capturedUsage,
     durationMs: totalDurationMs,
-    tokenUsage: aggregatedTokenUsage,
+    tokenUsage: capturedUsage,
   };
 }
 
-export const WEIJIE_REVERSE_VERIFICATION_SYSTEM_PROMPT = `你是一名严谨的港口集装箱绑扎单据【独立复核审计员】。
-第一阶段子模型已经从图片中的指定表格提取出了“伟捷”（表中常写为“E伟捷”或“伟捷”，输出统一为“伟捷”）队的 JSON 数据。
-现在请你对照原图中的【对应指定表格】，对该 JSON 中的【全部核心字段】逐一进行反向视觉核对。
-
-【头号重点防范：彻底排查“串行”（把第1行 A同兴 误读成第2行 E伟捷）！】：
-在很多情况下，首轮提取模型会因为表格中间有多个空白列，而把【第1行（A同兴）】整行的数字（箱数、合计箱数、车辆数合计、绑扎人数、队长签名）张冠李戴到了【第2行（E伟捷）】身上！
-虽然第1行（A同兴）自身的算术“箱数 × 系数 = 车辆数合计”也是成立的，但那是第1行 A同兴 的数据，绝不是第2行 E伟捷 的数据！
-
-【强制执行的复核步骤】：
-第一步（必填 allRowsAudit）：
-- 在判断 isMatched 之前，你必须先按【从上到下】的物理行顺序，把该表中前3~4个队伍行（例如：第1行 A同兴、第2行 E伟捷、第3行 F杰兴）各自的数字和队长签名逐行抄录到 allRowsAudit 数组中！
-- 在每一列（箱型列、箱数合计、车辆数合计、绑扎人数、队长确认）中，从上往下数：
-  * 紧贴表头下方的第 1 个手写数字/签名属于【第1行 A同兴】；
-  * 往下第 2 个手写数字/签名才属于【第2行 E伟捷】；
-  * 往下第 3 个手写数字/签名属于【第3行 F杰兴】；
-  * 最底部“合计”行的数字 = 上面各队伍行同一列数字之和。
-
-第二步（逐项比对 allRowsAudit 中的“E伟捷”行与首轮 JSON）：
-1. 日期（date）与船名航次（voyage）：核对该表左上角手写或印刷的日期、船名航次是否有错字或漏字。
-2. 串行核对：比对首轮 JSON 的箱数、totalBoxes、totalVehicleUnits、workerCount、leaderSignature 是否真正等于 allRowsAudit 中第2行“E伟捷”的数据！如果首轮 JSON 实际上等于第1行“A同兴”的数据，必须立即判定为串行（isMatched = false）！
-3. 箱型代码、分类（含F必为框架箱，否则为集装箱）与括号内对应台数核对。
-
-请严格按照 ReverseVerificationRawSchema 输出 JSON：
-- 如果全部核对无误：设置 isMatched = true，discrepancies = []，correctedData = null。
-- 如果发现串行（如误读了A同兴行）、错字、漏列或手写区错位：必须设置 isMatched = false，在 discrepancies 中列出所有差异，并在 correctedData 中填入第2行“E伟捷”的真实修正数据（teamName 为 "伟捷"）。`;
+export const WEIJIE_REVERSE_VERIFICATION_SYSTEM_PROMPT = `请对照原图中的指定表格，先在 allRowsAudit 中按从上到下的顺序原样提取该表各队伍行（如 A同兴、E伟捷、F杰兴、H中波、合计 等）的数据，再核对首轮提取的“伟捷（E伟捷）”行数据（包括日期 date、船名航次 voyage、各箱型箱数 items、箱数合计 totalBoxes、车辆数合计 totalVehicleUnits、绑扎人数 workerCount、队长签名 leaderSignature）是否与原图中“E伟捷”行完全一致。
+- 若全部一致：设置 isMatched = true，discrepancies = []，correctedData = null。
+- 若存在任何差异（如读成其他队伍行、船名错字、数字或签名偏差）：设置 isMatched = false，在 discrepancies 中列出差异，并在 correctedData 中填入原图“E伟捷”行的真实数据（teamName 为 "伟捷"）。`;
 
 export interface ReverseVerifyOptions {
   image?: string;

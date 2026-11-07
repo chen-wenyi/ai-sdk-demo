@@ -3,6 +3,7 @@ import {
   extractImageFromPayload,
   extractMultipleTablesFromImage,
   generatePlainTextReply,
+  generateRawModelReply,
   reverseVerifyLashingData,
   DEFAULT_QWEN_BASE_URL,
   DEFAULT_QWEN_MODEL,
@@ -86,6 +87,36 @@ export async function POST(req: NextRequest) {
     const image = extractImageFromPayload(body);
     const plainPrompt =
       typeof body.prompt === "string" ? body.prompt.trim() : "";
+
+    // Raw Model Mode (no JSON schema, no card rendering, native model output)
+    if (body.mode === "raw_model" || body.rawModelMode === true) {
+      const reply = await generateRawModelReply({
+        prompt: plainPrompt,
+        image: image || undefined,
+        apiKey,
+        baseURL,
+        model,
+        mockFallback,
+      });
+      const totalDurationMs =
+        reply.durationMs || Math.max(1, Date.now() - reqStart);
+      return NextResponse.json(
+        {
+          mode: "text",
+          rawModelMode: true,
+          text: reply.text,
+          model: reply.model,
+          durationMs: totalDurationMs,
+          tokenUsage: reply.tokenUsage,
+        },
+        {
+          status: 200,
+          headers: {
+            "x-duration-ms": String(totalDurationMs),
+          },
+        }
+      );
+    }
 
     // Stage 2: Reverse Verification Mode
     if (

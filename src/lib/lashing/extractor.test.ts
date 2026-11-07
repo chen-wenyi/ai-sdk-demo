@@ -368,6 +368,104 @@ describe("extractLashingDataFromImage Service", () => {
     expect(result.reports[1].isValid).toBe(true);
   });
 
+  it("should extract full tables (allTeamRows) in single pass and filter out 伟捷 in code", async () => {
+    const result = await extractMultipleTablesFromImage({
+      image: "data:image/jpeg;base64,fullTableTwoSheets",
+      apiKey: "test-key",
+      fullTableGenerator: async () => ({
+        object: {
+          tables: [
+            {
+              tableIndex: 1,
+              positionDescription: "上半部分第1张表",
+              date: "2026.10.28",
+              voyage: "绿上海 V6",
+              allTeamRows: [
+                {
+                  rowIndex: 1,
+                  rawTeamName: "A同兴",
+                  items: [
+                    { code: "48FR (3)", type: "框架箱", unitCapacity: 3, boxCount: 5 },
+                    { code: "40HQ/40HC (3) 一斜两直", type: "集装箱", unitCapacity: 3, boxCount: 23 },
+                  ],
+                  totalBoxes: 28,
+                  totalVehicleUnits: 84,
+                  workerCount: 12,
+                  leaderSignature: "彭滔",
+                },
+                {
+                  rowIndex: 2,
+                  rawTeamName: "E伟捷",
+                  items: [
+                    { code: "48FR (3)", type: "框架箱", unitCapacity: 3, boxCount: 5 },
+                    { code: "40HQ/40HC (3) 一斜两直", type: "集装箱", unitCapacity: 3, boxCount: 41 },
+                  ],
+                  totalBoxes: 46,
+                  totalVehicleUnits: 138,
+                  workerCount: 17,
+                  leaderSignature: "郭相帅",
+                },
+              ],
+            },
+            {
+              tableIndex: 2,
+              positionDescription: "下半部分第2张表",
+              date: "2026.10.28",
+              voyage: "蓝宝石 V6",
+              allTeamRows: [
+                {
+                  rowIndex: 1,
+                  rawTeamName: "A同兴",
+                  items: [
+                    { code: "48FR (3)", type: "框架箱", unitCapacity: 3, boxCount: 30 },
+                    { code: "40HQ/40HC (2) 两直装", type: "集装箱", unitCapacity: 2, boxCount: 3 },
+                  ],
+                  totalBoxes: 33,
+                  totalVehicleUnits: 96,
+                  workerCount: 12,
+                  leaderSignature: "彭滔",
+                },
+                {
+                  rowIndex: 2,
+                  rawTeamName: "E伟捷",
+                  items: [
+                    { code: "48FR (3)", type: "框架箱", unitCapacity: 3, boxCount: 35 },
+                    { code: "40HQ/40HC (2) 两直装", type: "集装箱", unitCapacity: 2, boxCount: 4 },
+                  ],
+                  totalBoxes: 39,
+                  totalVehicleUnits: 113,
+                  workerCount: 17,
+                  leaderSignature: "郭相帅",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+
+    expect(result.tableCount).toBe(2);
+    expect(result.reports[0].teamName).toBe("伟捷");
+    expect(result.reports[0].voyage).toBe("绿上海 V6");
+    expect(result.reports[0].items).toEqual([
+      { code: "48FR(3)", type: "框架箱", unitCapacity: 3, boxCount: 5 },
+      { code: "40HQ/40HC(3)", type: "集装箱", unitCapacity: 3, boxCount: 41 },
+    ]);
+    expect(result.reports[0].totalBoxes).toBe(46);
+    expect(result.reports[0].totalVehicleUnits).toBe(138);
+    expect(result.reports[0].leaderSignature).toBe("郭相帅");
+
+    expect(result.reports[1].teamName).toBe("伟捷");
+    expect(result.reports[1].voyage).toBe("蓝宝石 V6");
+    expect(result.reports[1].items).toEqual([
+      { code: "48FR(3)", type: "框架箱", unitCapacity: 3, boxCount: 35 },
+      { code: "40HQ/40HC(2)", type: "集装箱", unitCapacity: 2, boxCount: 4 },
+    ]);
+    expect(result.reports[1].totalBoxes).toBe(39);
+    expect(result.reports[1].totalVehicleUnits).toBe(113);
+    expect(result.reports[1].leaderSignature).toBe("郭相帅");
+  });
+
   it("should execute generateText with instructions and file content without throwing InvalidPromptError", async () => {
     const { MockLanguageModelV4 } = await import("ai/test");
 

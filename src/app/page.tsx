@@ -41,7 +41,9 @@ export default function Home() {
         role: "user",
         content:
           text ||
-          "请识别本张《每天各绑扎队作业数量统计表》中“E伟捷”队伍的作业数据并核对一致性。",
+          (settings.rawModelMode
+            ? "提取图片中所有表格里关于 E伟捷 队伍的数据"
+            : "请全表提取本张绑扎统计表并过滤出“伟捷”队伍的作业数据。"),
         image: imageAttachment,
         createdAt: new Date(),
       };
@@ -70,8 +72,10 @@ export default function Home() {
           method: "POST",
           headers,
           body: JSON.stringify({
+            mode: settings.rawModelMode ? "raw_model" : undefined,
+            rawModelMode: Boolean(settings.rawModelMode),
             image: imageAttachment || "",
-            prompt: userMessage.content,
+            prompt: text || userMessage.content,
             apiKey: settings.apiKey || undefined,
             baseURL: settings.baseURL || undefined,
             model: settings.model || undefined,
@@ -124,8 +128,8 @@ export default function Home() {
         const allArithmeticValid = reportsWithVerifying.every((r) => r.isValid);
         const tableCountDesc =
           reportsWithVerifying.length > 1
-            ? `主模型盘点共识别出 ${reportsWithVerifying.length} 张表格，子模型并发提取`
-            : `已成功定位并提取`;
+            ? `全表提取并由代码逻辑过滤出 ${reportsWithVerifying.length} 张表格的`
+            : `全表提取并由代码逻辑过滤出`;
 
         const assistantMessage: ChatMessage = {
           id: assistantMsgId,

@@ -105,6 +105,33 @@ export const TableDiscoverySchema = z.object({
 
 export type TableDiscovery = z.infer<typeof TableDiscoverySchema>;
 
+export const SingleFullTableSchema = z.object({
+  tableIndex: z.coerce
+    .number()
+    .default(1)
+    .describe("表格序号，按从上到下顺序依次为 1, 2, ..."),
+  positionDescription: z
+    .string()
+    .default("")
+    .describe("表格在图片中的位置，如 上半部分第1张表、下半部分第2张表"),
+  date: z.string().default("").describe("该张表格左上角或左侧的日期"),
+  voyage: z.string().default("").describe("该张表格左上角或左侧的船名/航次"),
+  allTeamRows: z
+    .array(TeamRowScanItemSchema)
+    .default([])
+    .describe("按从上到下的顺序，原样提取该表格中每一行（如 A同兴、E伟捷、F杰兴、H中波、合计 等）的数据"),
+});
+
+export type SingleFullTable = z.infer<typeof SingleFullTableSchema>;
+
+export const FullTableMultiSheetSchema = z.object({
+  tables: z
+    .array(SingleFullTableSchema)
+    .describe("图片中所有独立的绑扎统计表（按从上到下顺序排列，全表每一行原样提取）"),
+});
+
+export type FullTableMultiSheet = z.infer<typeof FullTableMultiSheetSchema>;
+
 export const LashingTokenUsageSchema = z.object({
   totalTokens: z.number(),
   inputTokens: z.number(),

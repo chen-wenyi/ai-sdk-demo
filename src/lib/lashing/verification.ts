@@ -19,6 +19,20 @@ export function normalizeTeamName(rawTeamName: string): string {
 }
 
 /**
+ * Normalizes raw column header code (e.g. "40HQ/40HC (3) 一斜两直" -> "40HQ/40HC(3)", "48FR (3)" -> "48FR(3)")
+ */
+export function normalizeContainerCode(rawCode: string): string {
+  const trimmed = (rawCode || "").trim();
+  const matchWithParen = trimmed.match(
+    /^([A-Za-z0-9/]+)\s*[（(]\s*(\d+(?:\.\d+)?)\s*[)）]/
+  );
+  if (matchWithParen) {
+    return `${matchWithParen[1].toUpperCase()}(${matchWithParen[2]})`;
+  }
+  return trimmed;
+}
+
+/**
  * Rule: Any container code containing 'F' or 'f' (e.g. 48FR(3), 40FM, 40FR, 40FP)
  * is strictly "框架箱"; otherwise (e.g. 40HQ/40HC(3), 20GP(1)) it is "集装箱".
  */
@@ -43,7 +57,8 @@ export function parseUnitCapacityFromCode(
 
 /**
  * Domain Verification Seam:
- * Filters non-zero items, resolves container type (F -> 框架箱, else -> 集装箱)
+ * Filters out the "伟捷" row from full-table `allTeamRows` (if present),
+ * filters non-zero items, normalizes container code, resolves container type (F -> 框架箱, else -> 集装箱)
  * and unitCapacity from code parentheses, calculates vehicle units,
  * verifies internal consistency, and produces structured report.
  */
@@ -58,7 +73,7 @@ export function verifyLashingData(
     positionDescription?: string;
   }
 ): WeijieLashingReport {
-  // If allTeamRows row-by-row scan is present, locate the exact row for "伟捷" / "E伟捷"
+  // If allTeamRows full-table scan is present, locate the exact row for "伟捷" / "E伟捷"
   const scannedWeijieRow = Array.isArray(input.allTeamRows)
     ? input.allTeamRows.find((row) =>
         String(row?.rawTeamName || "").includes("伟捷")
@@ -81,7 +96,7 @@ export function verifyLashingData(
   const items: LashingItem[] = (effectiveRow.items || [])
     .filter((item) => Number(item.boxCount) > 0)
     .map((item) => {
-      const code = item.code.trim();
+      const code = normalizeContainerCode(item.code);
       const unitCapacity = parseUnitCapacityFromCode(code, item.unitCapacity);
       const type = resolveContainerType(code);
       return {
