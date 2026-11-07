@@ -3,6 +3,11 @@
 import React, { useRef, useEffect, useState } from "react";
 import { WeijieLashingReport, LashingTokenUsage } from "@/lib/lashing/types";
 import { WeijieLashingCard } from "@/components/lashing/weijie-lashing-card";
+import {
+  Message,
+  MessageContent,
+  MessageResponse,
+} from "@/components/ai-elements/message";
 import { Badge } from "@/components/ui/badge";
 import {
   Bot,
@@ -179,18 +184,18 @@ export function ChatMessageList({
                 </div>
               )}
 
-              {/* Text Content */}
+              {/* Text / Markdown Content via official shadcn AI Elements Message + MessageContent + MessageResponse */}
               {message.content && (
-                <div
-                  className={cn(
-                    "rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words shadow-2xs",
-                    isUser
-                      ? "bg-primary text-primary-foreground rounded-tr-xs"
-                      : "bg-muted/50 border border-border/60 text-foreground rounded-tl-xs"
-                  )}
-                >
-                  {message.content}
-                </div>
+                <Message from={message.role} className="max-w-full">
+                  <MessageContent
+                    className={cn(
+                      !isUser &&
+                        "rounded-2xl bg-muted/50 border border-border/60 px-4 py-3 text-foreground rounded-tl-xs shadow-2xs"
+                    )}
+                  >
+                    <MessageResponse>{message.content}</MessageResponse>
+                  </MessageContent>
+                </Message>
               )}
 
               {/* Structured Lashing Cards (Supports 1 or Multiple Tables) */}
