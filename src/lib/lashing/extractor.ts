@@ -564,18 +564,23 @@ export async function extractLashingDataFromImage(
 
 export const WEIJIE_REVERSE_VERIFICATION_SYSTEM_PROMPT = `你是一名严谨的港口集装箱绑扎单据【独立复核审计员】。
 第一阶段 AI 已经从《每天各绑扎队作业数量统计表》图片中提取出了“E伟捷”队的 JSON 数据。
-现在请你对照原图，对该 JSON 数据进行逐项【反向视觉核对】（注意：日期、船名航次、箱数、合计箱数、绑扎车装台数均为表格打印内容，只有作业人数与队长签名为手写）：
+现在请你对照原图，对该 JSON 中的【全部 7 类核心字段】逐一进行反向视觉核对，确保没有任何遗漏（注意：日期、船名航次、箱数、合计箱数、绑扎车装台数均为表格打印内容，只有作业人数与队长签名为手写）：
 
-【反向核对五大检查项】：
-1. 日期与船名航次核对：逐字核对原图左侧的“日期”（date）与“船名航次”（voyage）印刷文字，检查是否有近音字或形近字误读。
-2. 防串行核对：在原图“绑扎队”列重新定位“E伟捷”行，确认首轮提取的每个箱型数量（boxCount）确实位于“E伟捷”这一横行，而非上下相邻的其他队伍行或底部合计行。
-3. 防串列与漏列核对：沿“E伟捷”行从左到右逐格检查，确认没有漏掉任何其他非空白的打印数字列（仅核对有数值的列，空白列忽略），且每个数字对应的表头箱型代码（code）与单箱台数系数（unitCapacity）与原图表头完全一致。
-4. 打印合计核对：核对“E伟捷”行右侧打印的“合计箱数”（totalBoxes）和“绑扎车装台数”（totalVehicleUnits）是否与原图一致。
-5. 手写区对齐与字迹核对：检查“E伟捷”行右侧手写的“各队作业人数/使用人数”（workerCount）与“队长签名/班组长签字”（leaderSignature）是否严格水平对齐“E伟捷”行（切勿因上方行留空而把下一行的数字/签名错配给E伟捷），并核对手写字迹是否吻合。
+【必须逐项核对的完整清单（严禁漏检）】：
+1. 日期（date）与船名航次（voyage）：
+   - 放大观察表格左侧的“日期”与“船名航次”单元格，逐字比对首轮提取的文字与原图印刷文字是否一字不差（特别警惕同音字或形近字误读，例如“优雅”误读为“欧亚”等，发现一字不同即必须判定为不一致！）。
+2. 防串行核对（绑扎队行定位）：
+   - 在原图“绑扎队”列重新定位“E伟捷”行，确认首轮提取的所有数值确实位于“E伟捷”这一横行，而非上下相邻的其他队伍行或底部合计行。
+3. 防串列与漏列核对（items 箱型代码、名称、系数、箱数）：
+   - 沿“E伟捷”行从左到右逐格检查，确认没有漏掉任何其他非空白的打印数字列（仅核对有数值的列，空白列忽略），且每个数字对应的表头箱型代码（code）、箱型名称（type）与单箱折算台数系数（unitCapacity）与原图表头完全一致。
+4. 打印合计核对（totalBoxes 与 totalVehicleUnits）：
+   - 核对“E伟捷”行右侧打印的“合计”箱数（totalBoxes）和“绑扎车装台数”（totalVehicleUnits）是否与原图完全一致。
+5. 手写区对齐与字迹核对（workerCount 与 leaderSignature）：
+   - 检查“E伟捷”行右侧手写的“各队作业人数/使用人数”（workerCount）与“队长签名/班组长签字”（leaderSignature）是否严格水平对齐“E伟捷”行的格线（切勿因上方队伍行留空而把下一行的数字/签名错配给E伟捷），并逐笔核对手写姓名是否准确。
 
 请严格按照 ReverseVerificationRawSchema 输出 JSON：
-- 如果全部核对无误：设置 isMatched = true，discrepancies = []，correctedData = null，并在 summary 中简明说明已核对哪些字段且与原图完全一致。
-- 如果发现任何文字误读、串行、串列、漏列或手写区错位：设置 isMatched = false，在 discrepancies 中逐项列出差异，并在 correctedData 中提供修正后的完整“E伟捷”数据。`;
+- 如果以上 5 大项全部核对无误：设置 isMatched = true，discrepancies = []，correctedData = null，并在 summary 中明确列出已核对的日期、船名航次、箱型箱数、合计、人数及签名结论。
+- 如果发现任何一处文字偏差（包括船名错字）、串行、串列、漏列或手写区错位：必须设置 isMatched = false，在 discrepancies 中逐项列出差异，并在 correctedData 中提供修正后的完整“E伟捷”数据。`;
 
 export interface ReverseVerifyOptions {
   image?: string;
@@ -641,7 +646,7 @@ export async function reverseVerifyLashingData(
     return {
       status: "passed",
       isMatched: true,
-      summary: `已反向核对原图“${candidateSummary.teamName}”行：${itemsDesc}，打印合计 ${candidateSummary.totalBoxes} 箱 / ${candidateSummary.totalVehicleUnits} 台，手写人数 ${candidateSummary.workerCount} 人、签字“${candidateSummary.leaderSignature}”均与原图完全吻合，无串行串列。`,
+      summary: `已反向核对原图：日期“${candidateSummary.date}”、船名航次“${candidateSummary.voyage}”，${candidateSummary.teamName}行 ${itemsDesc}，打印合计 ${candidateSummary.totalBoxes} 箱 / ${candidateSummary.totalVehicleUnits} 台，手写人数 ${candidateSummary.workerCount} 人、签字“${candidateSummary.leaderSignature}”均与原图完全吻合。`,
       discrepancies: [],
       durationMs: Math.max(1, Date.now() - startTime),
     };
@@ -694,7 +699,7 @@ export async function reverseVerifyLashingData(
       content: [
         {
           type: "text" as const,
-          text: `以下是首轮提取的“E伟捷”行 JSON 数据，请对照原图进行二次反向视觉核对，检查是否存在串行、串列、漏列或手写签名误读，并严格按 JSON Schema 输出复核结果：\n${JSON.stringify(
+          text: `以下是首轮提取的“E伟捷”行 JSON 数据。请对照原图逐项进行二次反向视觉核对（必须逐一检查：1.日期 date 与船名航次 voyage 是否有一字之差；2.E伟捷行是否串行；3.箱型代码 code、系数 unitCapacity、箱数 boxCount 是否串列或漏列；4.合计箱数 totalBoxes 与车装台数 totalVehicleUnits；5.手写人数 workerCount 与队长签名 leaderSignature 的水平行对齐及字迹），并严格按 JSON Schema 输出复核结果：\n${JSON.stringify(
             candidateSummary,
             null,
             2

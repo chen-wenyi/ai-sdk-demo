@@ -35,10 +35,12 @@ export type LashingTokenUsage = z.infer<typeof LashingTokenUsageSchema>;
 export const ReverseDiscrepancySchema = z.object({
   field: z
     .string()
-    .describe("存在差异的字段名，如 48FR.boxCount, totalBoxes, workerCount, leaderSignature"),
+    .describe(
+      "存在差异的字段名，如 date(日期), voyage(船名航次), 48FR.boxCount(箱数), 48FR.unitCapacity(系数), totalBoxes(合计箱数), totalVehicleUnits(车装台数), workerCount(作业人数), leaderSignature(队长签名)"
+    ),
   expectedByFirstPass: z.coerce.string().describe("首轮提取的值"),
   foundInSecondPass: z.coerce.string().describe("二次反向核对在原图中看到的真实值"),
-  reason: z.coerce.string().describe("差异原因说明，如串行误读、漏读非零列、手写笔画差异等"),
+  reason: z.coerce.string().describe("差异原因说明，如船名错别字、串行误读、漏读非零列、手写区错位等"),
 });
 
 export type ReverseDiscrepancy = z.infer<typeof ReverseDiscrepancySchema>;
