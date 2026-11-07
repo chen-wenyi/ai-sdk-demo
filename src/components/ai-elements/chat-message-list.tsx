@@ -21,6 +21,7 @@ export interface ChatMessage {
   content: string;
   image?: string;
   report?: WeijieLashingReport;
+  reports?: WeijieLashingReport[];
   durationMs?: number;
   tokenUsage?: LashingTokenUsage;
   isError?: boolean;
@@ -31,7 +32,11 @@ export interface ChatMessageListProps {
   messages: ChatMessage[];
   isLoading?: boolean;
   modelName?: string;
-  onUpdateReport?: (messageId: string, newReport: WeijieLashingReport) => void;
+  onUpdateReport?: (
+    messageId: string,
+    newReport: WeijieLashingReport,
+    reportIndex?: number
+  ) => void;
   className?: string;
 }
 
@@ -78,9 +83,9 @@ export function ChatMessageList({
             港口绑扎单据多模态结构化助手
           </h2>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            上传码头《每天各绑扎队作业数量统计表》现场照片，系统将调用 Qwen
-            视觉大模型精准锚定<strong className="text-foreground">“E伟捷”</strong>
-            队伍作业数据，并在聊天流中自动渲染横向转置表格与一致性核验。
+            上传码头绑扎统计表现场照片（支持单张或多张表），主模型将自动盘点表数量并派发子模型并行提取
+            <strong className="text-foreground">“伟捷”</strong>
+            队伍作业数据，同时执行二次反向视觉核验。
           </p>
         </div>
       </div>
@@ -93,6 +98,12 @@ export function ChatMessageList({
         const isUser = message.role === "user";
         const duration = message.durationMs ?? message.report?.durationMs;
         const usage = message.tokenUsage ?? message.report?.tokenUsage;
+        const reportList =
+          Array.isArray(message.reports) && message.reports.length > 0
+            ? message.reports
+            : message.report
+            ? [message.report]
+            : [];
 
         return (
           <div
@@ -182,16 +193,19 @@ export function ChatMessageList({
                 </div>
               )}
 
-              {/* Structured Lashing Card (Renders Directly Inside Message Bubble) */}
-              {!isUser && message.report && (
-                <div className="w-full">
-                  <WeijieLashingCard
-                    report={message.report}
-                    isVerified={message.report.isHumanVerified}
-                    onUpdateReport={(updatedReport) => {
-                      onUpdateReport?.(message.id, updatedReport);
-                    }}
-                  />
+              {/* Structured Lashing Cards (Supports 1 or Multiple Tables) */}
+              {!isUser && reportList.length > 0 && (
+                <div className="w-full space-y-3">
+                  {reportList.map((rep, idx) => (
+                    <WeijieLashingCard
+                      key={`${message.id}-table-${rep.tableIndex ?? idx}`}
+                      report={rep}
+                      isVerified={rep.isHumanVerified}
+                      onUpdateReport={(updatedReport) => {
+                        onUpdateReport?.(message.id, updatedReport, idx);
+                      }}
+                    />
+                  ))}
                 </div>
               )}
 

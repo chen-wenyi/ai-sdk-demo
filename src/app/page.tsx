@@ -100,116 +100,153 @@ export default function Home() {
           return;
         }
 
-        const rawReport: WeijieLashingReport = data.report || data;
-        const durationMs = rawReport.durationMs || clientElapsedMs;
+        const rawReports: WeijieLashingReport[] =
+          Array.isArray(data.reports) && data.reports.length > 0
+            ? data.reports
+            : [data.report || data];
+
+        const totalDurationMs = data.durationMs || clientElapsedMs;
         const assistantMsgId = `assistant-${Date.now()}`;
-        const report: WeijieLashingReport = {
-          ...rawReport,
-          durationMs,
-          reverseVerification: {
-            status: "verifying",
-            discrepancies: [],
-          },
-        };
+
+        const reportsWithVerifying: WeijieLashingReport[] = rawReports.map(
+          (rep, idx) => ({
+            ...rep,
+            tableIndex: rep.tableIndex ?? idx + 1,
+            totalTables: rawReports.length,
+            durationMs: rep.durationMs || totalDurationMs,
+            reverseVerification: {
+              status: "verifying",
+              discrepancies: [],
+            },
+          })
+        );
+
+        const allArithmeticValid = reportsWithVerifying.every((r) => r.isValid);
+        const tableCountDesc =
+          reportsWithVerifying.length > 1
+            ? `主模型盘点共识别出 ${reportsWithVerifying.length} 张表格，子模型并发提取`
+            : `已成功定位并提取`;
 
         const assistantMessage: ChatMessage = {
           id: assistantMsgId,
           role: "assistant",
-          content: `已成功定位并提取【${report.teamName || "E伟捷"}】行绑扎数据（耗时 ${(
-            durationMs / 1000
+          content: `${tableCountDesc}【伟捷】行绑扎数据（总耗时 ${(
+            totalDurationMs / 1000
           ).toFixed(2)}s），算术比对${
-            report.isValid ? "一致（校验通过）" : "存在偏差，请确认"
-          }，正在启动大模型二次反向视觉核对：`,
-          report,
-          durationMs,
-          tokenUsage: report.tokenUsage,
+            allArithmeticValid ? "全部一致（校验通过）" : "存在偏差，请确认"
+          }，正在并行启动大模型二次反向视觉核对：`,
+          report: reportsWithVerifying[0],
+          reports: reportsWithVerifying,
+          durationMs: totalDurationMs,
+          tokenUsage: data.tokenUsage || reportsWithVerifying[0]?.tokenUsage,
           createdAt: new Date(),
         };
 
         setMessages((prev) => [...prev, assistantMessage]);
         setIsLoading(false);
 
-        // Stage 2: Asynchronous Reverse Verification with LLM
-        void (async () => {
-          try {
-            const verifyRes = await fetch("/api/chat", {
-              method: "POST",
-              headers,
-              body: JSON.stringify({
-                mode: "reverse_verify",
-                image: imageAttachment || "",
-                extractedReport: rawReport,
-                apiKey: settings.apiKey || undefined,
-                baseURL: settings.baseURL || undefined,
-                model: settings.model || undefined,
-                mockFallback: settings.mockFallback,
-              }),
-            });
-            const verifyData = await verifyRes.json();
-            if (verifyRes.ok && verifyData.reverseVerification) {
-              const rev = verifyData.reverseVerification;
+        // Stage 2: Asynchronous Parallel Reverse Verification for each extracted table
+        void Promise.all(
+          reportsWithVerifying.map(async (targetReport, reportIdx) => {
+            try {
+              const verifyRes = await fetch("/api/chat", {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                  mode: "reverse_verify",
+                  image: imageAttachment || "",
+                  extractedReport: targetReport,
+                  apiKey: settings.apiKey || undefined,
+                  baseURL: settings.baseURL || undefined,
+                  model: settings.model || undefined,
+                  mockFallback: settings.mockFallback,
+                }),
+              });
+              const verifyData = await verifyRes.json();
+              const rev =
+                verifyRes.ok && verifyData.reverseVerification
+                  ? verifyData.reverseVerification
+                  : {
+                      status: "error" as const,
+                      summary: verifyData?.error || "二次反向核对未完成",
+                      discrepancies: [],
+                    };
+
               setMessages((prev) =>
                 prev.map((msg) => {
-                  if (msg.id !== assistantMsgId || !msg.report) return msg;
+                  if (msg.id !== assistantMsgId) return msg;
+                  const currentList =
+                    msg.reports && msg.reports.length > 0
+                      ? [...msg.reports]
+                      : msg.report
+                      ? [msg.report]
+                      : [];
+                  if (!currentList[reportIdx]) return msg;
+
+                  currentList[reportIdx] = {
+                    ...currentList[reportIdx],
+                    reverseVerification: rev,
+                  };
+
+                  const anyStillVerifying = currentList.some(
+                    (r) => r.reverseVerification?.status === "verifying"
+                  );
+                  const allPassed = currentList.every(
+                    (r) => r.reverseVerification?.status === "passed"
+                  );
+                  const anyMismatch = currentList.some(
+                    (r) => r.reverseVerification?.status === "mismatch"
+                  );
+
+                  const statusSummary = anyStillVerifying
+                    ? "正在并行启动大模型二次反向视觉核对"
+                    : allPassed
+                    ? "二次反向核对全部一致（通过）"
+                    : anyMismatch
+                    ? "二次反向核对发现潜在差异"
+                    : "二次反向核对已完成";
+
                   return {
                     ...msg,
-                    content: `已成功定位并提取【${msg.report.teamName || "E伟捷"}】行绑扎数据（首轮耗时 ${(
-                      durationMs / 1000
+                    content: `${tableCountDesc}【伟捷】行绑扎数据（首轮耗时 ${(
+                      totalDurationMs / 1000
                     ).toFixed(2)}s），算术比对${
-                      msg.report.isValid ? "一致" : "存在偏差"
-                    }，二次反向核对${
-                      rev.status === "passed"
-                        ? "一致（通过）"
-                        : rev.status === "mismatch"
-                        ? "发现潜在差异"
-                        : "已完成"
-                    }：`,
-                    report: {
-                      ...msg.report,
-                      reverseVerification: rev,
-                    },
+                      currentList.every((r) => r.isValid) ? "一致" : "存在偏差"
+                    }，${statusSummary}：`,
+                    report: currentList[0],
+                    reports: currentList,
                   };
                 })
               );
-            } else {
+            } catch {
               setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMsgId && msg.report
-                    ? {
-                        ...msg,
-                        report: {
-                          ...msg.report,
-                          reverseVerification: {
-                            status: "error",
-                            summary: verifyData?.error || "二次反向核对未完成",
-                            discrepancies: [],
-                          },
-                        },
-                      }
-                    : msg
-                )
+                prev.map((msg) => {
+                  if (msg.id !== assistantMsgId) return msg;
+                  const currentList =
+                    msg.reports && msg.reports.length > 0
+                      ? [...msg.reports]
+                      : msg.report
+                      ? [msg.report]
+                      : [];
+                  if (!currentList[reportIdx]) return msg;
+                  currentList[reportIdx] = {
+                    ...currentList[reportIdx],
+                    reverseVerification: {
+                      status: "error",
+                      summary: "二次反向验证网络请求异常",
+                      discrepancies: [],
+                    },
+                  };
+                  return {
+                    ...msg,
+                    report: currentList[0],
+                    reports: currentList,
+                  };
+                })
               );
             }
-          } catch {
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMsgId && msg.report
-                  ? {
-                      ...msg,
-                      report: {
-                        ...msg.report,
-                        reverseVerification: {
-                          status: "error",
-                          summary: "二次反向验证网络请求异常",
-                          discrepancies: [],
-                        },
-                      },
-                    }
-                  : msg
-              )
-            );
-          }
-        })();
+          })
+        );
       } catch (err: unknown) {
         const clientElapsedMs = Math.max(1, Date.now() - clientStart);
         const message =
@@ -231,14 +268,24 @@ export default function Home() {
   );
 
   const handleUpdateReport = useCallback(
-    (messageId: string, newReport: WeijieLashingReport) => {
+    (
+      messageId: string,
+      newReport: WeijieLashingReport,
+      reportIndex: number = 0
+    ) => {
       setMessages((prev) =>
         prev.map((msg) => {
           if (msg.id === messageId) {
+            const nextReports =
+              msg.reports && msg.reports.length > 0
+                ? [...msg.reports]
+                : [newReport];
+            nextReports[reportIndex] = newReport;
             return {
               ...msg,
-              content: `已成功定位并提取【${newReport.teamName || "E伟捷"}】行绑扎数据（已由人工核实验收）：`,
-              report: newReport,
+              content: `已成功定位并提取【${newReport.teamName || "伟捷"}】行绑扎数据（已由人工核实验收）：`,
+              report: nextReports[0],
+              reports: nextReports,
             };
           }
           return msg;

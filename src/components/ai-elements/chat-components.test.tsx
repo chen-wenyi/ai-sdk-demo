@@ -183,4 +183,39 @@ describe("Chat Components Integration", () => {
     expect(htmlMismatch).toContain("一键采纳二次复核结果");
     expect(htmlMismatch).toContain("郭相帅");
   });
+
+  it("should render multiple WeijieLashingCards when a message contains multiple tables", () => {
+    const multiMessages: ChatMessage[] = [
+      {
+        id: "msg-multi",
+        role: "assistant",
+        content: "共识别出 2 张表格：",
+        reports: [
+          {
+            ...benchmarkReport,
+            tableIndex: 1,
+            totalTables: 2,
+            teamName: "伟捷",
+            voyage: "绿上海 V6",
+          },
+          {
+            ...benchmarkReport,
+            tableIndex: 2,
+            totalTables: 2,
+            teamName: "伟捷",
+            voyage: "蓝宝石 V6",
+          },
+        ],
+      },
+    ];
+
+    const html = renderToString(
+      <ChatMessageList messages={multiMessages} isLoading={false} />
+    );
+
+    expect(html).toContain("表 1/2");
+    expect(html).toContain("表 2/2");
+    expect(html).toContain("绿上海 V6");
+    expect(html).toContain("蓝宝石 V6");
+  });
 });

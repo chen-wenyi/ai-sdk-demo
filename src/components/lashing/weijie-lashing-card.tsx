@@ -154,7 +154,12 @@ export function WeijieLashingCard({
       },
       report.durationMs,
       report.tokenUsage,
-      report.reverseVerification
+      report.reverseVerification,
+      {
+        tableIndex: report.tableIndex,
+        totalTables: report.totalTables,
+        positionDescription: report.positionDescription,
+      }
     );
 
     setIsEditing(false);
@@ -187,6 +192,11 @@ export function WeijieLashingCard({
         isMatched: true,
         summary: "已采纳二次反向核对修正结果并完成人工确认。",
         discrepancies: [],
+      },
+      {
+        tableIndex: report.tableIndex,
+        totalTables: report.totalTables,
+        positionDescription: report.positionDescription,
       }
     );
     onUpdateReport?.(updated);
@@ -226,7 +236,7 @@ export function WeijieLashingCard({
       items: [
         ...prev.items,
         {
-          code: "40FR",
+          code: "40FR(3)",
           type: "框架箱",
           unitCapacity: 3,
           boxCount: 0,
@@ -268,7 +278,7 @@ export function WeijieLashingCard({
       link.href = url;
       link.setAttribute(
         "download",
-        `绑扎作业核算_${report.teamName || "E伟捷"}_${report.date || "当日"}.csv`
+        `绑扎作业核算_${report.teamName || "伟捷"}_${report.date || "当日"}.csv`
       );
       document.body.appendChild(link);
       link.click();
@@ -297,11 +307,20 @@ export function WeijieLashingCard({
         <div className="flex flex-wrap items-center justify-between gap-2.5">
           {/* Left Metadata / Inputs */}
           <div className="flex flex-wrap items-center gap-2">
+            {report.tableIndex && (report.totalTables ?? 1) > 1 && (
+              <Badge
+                variant="secondary"
+                data-testid="table-index-badge"
+                className="font-mono font-semibold px-2 py-0.5 text-xs rounded-md"
+              >
+                {`表 ${report.tableIndex}/${report.totalTables}`}
+              </Badge>
+            )}
             <Badge
               variant="default"
               className="bg-primary text-primary-foreground font-semibold px-2.5 py-0.5 text-xs rounded-md shadow-xs"
             >
-              {currentDisplayReport.teamName || "E伟捷"}
+              {currentDisplayReport.teamName || "伟捷"}
             </Badge>
 
             {isEditing ? (

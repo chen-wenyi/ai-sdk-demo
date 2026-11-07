@@ -49,7 +49,7 @@ describe("API Route: /api/chat", () => {
     expect(res.headers.get("x-weijie-verified")).toBe("true");
 
     const data = await res.json();
-    expect(data.teamName).toBe("E伟捷");
+    expect(data.teamName).toBe("伟捷");
     expect(data.date).toBe("11月2日");
     expect(data.voyage).toBe("中远海运欧亚航 V27");
     expect(data.items).toHaveLength(2);
@@ -63,6 +63,7 @@ describe("API Route: /api/chat", () => {
     expect(data.workerCount).toBe(20);
     expect(data.leaderSignature).toBe("李春河");
     expect(data.isValid).toBe(true);
+    expect(Array.isArray(data.reports)).toBe(true);
   });
 
   it("POST /api/chat should accept AI SDK format with experimental_attachments and custom headers", async () => {
@@ -95,7 +96,7 @@ describe("API Route: /api/chat", () => {
     expect(res.status).toBe(200);
 
     const data = await res.json();
-    expect(data.teamName).toBe("E伟捷");
+    expect(data.teamName).toBe("伟捷");
     expect(data.isValid).toBe(true);
     expect(data.report).toBeDefined();
     expect(data.report.totalBoxes).toBe(54);
@@ -131,7 +132,7 @@ describe("API Route: /api/chat", () => {
     expect(res.status).toBe(200);
 
     const data = await res.json();
-    expect(data.teamName).toBe("E伟捷");
+    expect(data.teamName).toBe("伟捷");
     expect(data.date).toBe("11月2日");
     expect(data.voyage).toBe("中远海运欧亚航 V27");
     expect(data.totalBoxes).toBe(54);

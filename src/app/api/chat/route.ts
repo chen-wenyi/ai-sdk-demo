@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   extractImageFromPayload,
-  extractLashingDataFromImage,
+  extractMultipleTablesFromImage,
   generatePlainTextReply,
   reverseVerifyLashingData,
   DEFAULT_QWEN_BASE_URL,
@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const report = await extractLashingDataFromImage({
+    const multiResult = await extractMultipleTablesFromImage({
       image,
       apiKey,
       baseURL,
@@ -167,21 +167,30 @@ export async function POST(req: NextRequest) {
       mockFallback,
     });
 
-    const totalDurationMs = report.durationMs || Math.max(1, Date.now() - reqStart);
-    const finalReport = {
-      ...report,
-      durationMs: totalDurationMs,
+    const totalDurationMs =
+      multiResult.durationMs || Math.max(1, Date.now() - reqStart);
+    const primaryReport = {
+      ...multiResult.reports[0],
+      durationMs: multiResult.reports[0]?.durationMs || totalDurationMs,
     };
+
+    const allValid = multiResult.reports.every((r) => r.isValid);
 
     return NextResponse.json(
       {
-        ...finalReport,
-        report: finalReport,
+        ...primaryReport,
+        report: primaryReport,
+        reports: multiResult.reports,
+        tableCount: multiResult.tableCount,
+        masterDurationMs: multiResult.masterDurationMs,
+        masterTokenUsage: multiResult.masterTokenUsage,
+        durationMs: totalDurationMs,
+        tokenUsage: multiResult.tokenUsage ?? primaryReport.tokenUsage,
       },
       {
         status: 200,
         headers: {
-          "x-weijie-verified": finalReport.isValid ? "true" : "false",
+          "x-weijie-verified": allValid ? "true" : "false",
           "x-duration-ms": String(totalDurationMs),
         },
       }

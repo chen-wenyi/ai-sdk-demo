@@ -5,6 +5,7 @@ import {
   extractImageFromPayload,
   createQwenClient,
   extractLashingDataFromImage,
+  extractMultipleTablesFromImage,
   parseLashingJsonFromText,
   extractDashScopeUsage,
   reverseVerifyLashingData,
@@ -36,7 +37,7 @@ describe("Extractor Utilities", () => {
     const dashscopePayload = {
       isMatched: true,
       summary:
-        "经反向视觉核对，'E伟捷'行数据与原图完全一致。1. 防串行核对：确认数据位于'E伟捷'行（第2数据行），未与上一行'A同兴'或下一行'F杰兴'混淆。",
+        "经反向视觉核对，'伟捷'行数据与原图完全一致。",
       discrepancies: [],
       correctedData: null,
     };
@@ -156,19 +157,14 @@ describe("Extractor Utilities", () => {
 
   it("should parse valid JSON from markdown code blocks and coerced string numbers", () => {
     const rawAiResponse = `
-经过定位分析：
-1. 锁定左侧第2行队伍：E伟捷
-2. 读取到 48FR 绑扎 28 箱，40FM 绑扎 26 箱。
-3. 合计 54 箱，绑扎车装台数 162。
-
 \`\`\`json
 {
-  "teamName": "E伟捷",
+  "teamName": "伟捷",
   "date": "11月2日",
   "voyage": "中远海运欧亚航 V27",
   "items": [
     { "code": "48FR", "type": "框架箱", "unitCapacity": "3", "boxCount": "28" },
-    { "code": "40FM", "type": "斜架箱/框架", "unitCapacity": "3", "boxCount": "26" }
+    { "code": "40FM", "type": "框架箱", "unitCapacity": "3", "boxCount": "26" }
   ],
   "totalBoxes": "54",
   "totalVehicleUnits": "162",
@@ -179,7 +175,7 @@ describe("Extractor Utilities", () => {
 `;
     const parsed = parseLashingJsonFromText(rawAiResponse);
     expect(parsed).not.toBeNull();
-    expect(parsed?.teamName).toBe("E伟捷");
+    expect(parsed?.teamName).toBe("伟捷");
     expect(parsed?.totalBoxes).toBe(54);
     expect(parsed?.totalVehicleUnits).toBe(162);
     expect(parsed?.items[0].boxCount).toBe(28);
@@ -188,10 +184,10 @@ describe("Extractor Utilities", () => {
   });
 
   it("should parse outer curly braces without markdown code block", () => {
-    const textWithBraces = `分析完成：{"teamName":"E伟捷","date":"11月2日","voyage":"测试航次","items":[{"code":"48FR","type":"框架箱","unitCapacity":3,"boxCount":28}],"totalBoxes":28,"totalVehicleUnits":84,"workerCount":10,"leaderSignature":"李春河"} 以上为识别结果。`;
+    const textWithBraces = `分析完成：{"teamName":"伟捷","date":"11月2日","voyage":"测试航次","items":[{"code":"48FR","type":"框架箱","unitCapacity":3,"boxCount":28}],"totalBoxes":28,"totalVehicleUnits":84,"workerCount":10,"leaderSignature":"李春河"} 以上为识别结果。`;
     const parsed = parseLashingJsonFromText(textWithBraces);
     expect(parsed).not.toBeNull();
-    expect(parsed?.teamName).toBe("E伟捷");
+    expect(parsed?.teamName).toBe("伟捷");
     expect(parsed?.totalBoxes).toBe(28);
   });
 
@@ -209,7 +205,7 @@ describe("extractLashingDataFromImage Service", () => {
       mockFallback: true,
     });
 
-    expect(report.teamName).toBe("E伟捷");
+    expect(report.teamName).toBe("伟捷");
     expect(report.date).toBe("11月2日");
     expect(report.voyage).toBe("中远海运欧亚航 V27");
     expect(report.items).toHaveLength(2);
@@ -221,7 +217,7 @@ describe("extractLashingDataFromImage Service", () => {
     });
     expect(report.items[1]).toEqual({
       code: "40FM",
-      type: "斜架箱/框架",
+      type: "框架箱",
       unitCapacity: 3,
       boxCount: 26,
     });
@@ -235,16 +231,16 @@ describe("extractLashingDataFromImage Service", () => {
 
   it("should invoke custom generator and pass through verifyLashingData", async () => {
     const mockRaw: RawLashingInput = {
-      teamName: "伟捷",
+      teamName: "E伟捷",
       date: "11月3日",
       voyage: "中远海运星座航 V01",
       items: [
-        { code: "48FR", type: "框架箱", unitCapacity: 3, boxCount: 10 },
-        { code: "40FM", type: "斜架箱/框架", unitCapacity: 3, boxCount: 20 },
-        { code: "20GP", type: "普箱", unitCapacity: 1, boxCount: 0 }, // Should be filtered out
+        { code: "48FR(3)", type: "框架箱", unitCapacity: 3, boxCount: 10 },
+        { code: "40HQ/40HC(3)", type: "集装箱", unitCapacity: 3, boxCount: 20 },
+        { code: "20GP(1)", type: "集装箱", unitCapacity: 1, boxCount: 0 }, // Should be filtered out
       ],
       totalBoxes: 30,
-      totalVehicleUnits: 90, // 10*3 + 20*3 = 90
+      totalVehicleUnits: 90,
       workerCount: 15,
       leaderSignature: "张三",
     };
@@ -259,51 +255,129 @@ describe("extractLashingDataFromImage Service", () => {
       generator: customGenerator,
     });
 
-    expect(report.teamName).toBe("E伟捷");
+    expect(report.teamName).toBe("伟捷");
     expect(report.date).toBe("11月3日");
     expect(report.items).toHaveLength(2);
+    expect(report.items[0].type).toBe("框架箱");
+    expect(report.items[1].type).toBe("集装箱");
     expect(report.calculatedVehicleUnits).toBe(90);
     expect(report.isValid).toBe(true);
     expect(report.leaderSignature).toBe("张三");
   });
 
-  it("should accurately process the real test fixture image file", async () => {
-    const fixturePaths = [
-      "/home/antigravity/ca7321cf10ff8408bf7937f243e78cad.jpg",
-      path.resolve(__dirname, "../../../tests/fixtures/ca7321cf10ff8408bf7937f243e78cad.jpg"),
-    ];
-
-    const fixturePath = fixturePaths.find((p) => fs.existsSync(p));
-    expect(fixturePath).toBeDefined();
-
-    const buffer = fs.readFileSync(fixturePath!);
-    const base64Data = `data:image/jpeg;base64,${buffer.toString("base64")}`;
-
-    const report = await extractLashingDataFromImage({
-      image: base64Data,
-      mockFallback: true,
+  it("should orchestrate Master-Worker multi-table extraction for 2 stacked tables", async () => {
+    const result = await extractMultipleTablesFromImage({
+      image: "data:image/jpeg;base64,twoTablesSheet",
+      apiKey: "test-key",
+      masterGenerator: async () => ({
+        object: {
+          tableCount: 2,
+          tables: [
+            {
+              tableIndex: 1,
+              positionDescription: "上半部分第1张表",
+              dateHint: "2026.10.28",
+              voyageHint: "绿上海 V6",
+            },
+            {
+              tableIndex: 2,
+              positionDescription: "下半部分第2张表",
+              dateHint: "2026.10.28",
+              voyageHint: "蓝宝石 V6",
+            },
+          ],
+        },
+      }),
+      subGenerator: async ({ table }) => {
+        if (table.tableIndex === 1) {
+          return {
+            object: {
+              teamName: "E伟捷",
+              date: "2026.10.28",
+              voyage: "绿上海 V6",
+              items: [
+                { code: "48FR(3)", type: "框架箱", unitCapacity: 3, boxCount: 5 },
+                { code: "40HQ/40HC(3)", type: "集装箱", unitCapacity: 3, boxCount: 41 },
+              ],
+              totalBoxes: 46,
+              totalVehicleUnits: 138,
+              workerCount: 17,
+              leaderSignature: "郭相帅",
+            },
+          };
+        }
+        return {
+          object: {
+            teamName: "E伟捷",
+            date: "2026.10.28",
+            voyage: "蓝宝石 V6",
+            items: [
+              { code: "48FR(3)", type: "框架箱", unitCapacity: 3, boxCount: 35 },
+              { code: "40HQ/40HC(2)", type: "集装箱", unitCapacity: 2, boxCount: 4 },
+            ],
+            totalBoxes: 39,
+            totalVehicleUnits: 113,
+            workerCount: 17,
+            leaderSignature: "郭相帅",
+          },
+        };
+      },
     });
 
-    expect(report.teamName).toBe("E伟捷");
-    expect(report.date).toBe("11月2日");
-    expect(report.voyage).toBe("中远海运欧亚航 V27");
-    expect(report.totalBoxes).toBe(54);
-    expect(report.totalVehicleUnits).toBe(162);
-    expect(report.workerCount).toBe(20);
-    expect(report.leaderSignature).toBe("李春河");
-    expect(report.isValid).toBe(true);
+    expect(result.tableCount).toBe(2);
+    expect(result.reports).toHaveLength(2);
+
+    // Table 1: 绿上海 V6
+    expect(result.reports[0].tableIndex).toBe(1);
+    expect(result.reports[0].totalTables).toBe(2);
+    expect(result.reports[0].teamName).toBe("伟捷");
+    expect(result.reports[0].voyage).toBe("绿上海 V6");
+    expect(result.reports[0].items[0]).toEqual({
+      code: "48FR(3)",
+      type: "框架箱",
+      unitCapacity: 3,
+      boxCount: 5,
+    });
+    expect(result.reports[0].items[1]).toEqual({
+      code: "40HQ/40HC(3)",
+      type: "集装箱",
+      unitCapacity: 3,
+      boxCount: 41,
+    });
+    expect(result.reports[0].calculatedVehicleUnits).toBe(138);
+    expect(result.reports[0].isValid).toBe(true);
+
+    // Table 2: 蓝宝石 V6
+    expect(result.reports[1].tableIndex).toBe(2);
+    expect(result.reports[1].totalTables).toBe(2);
+    expect(result.reports[1].teamName).toBe("伟捷");
+    expect(result.reports[1].voyage).toBe("蓝宝石 V6");
+    expect(result.reports[1].items[0]).toEqual({
+      code: "48FR(3)",
+      type: "框架箱",
+      unitCapacity: 3,
+      boxCount: 35,
+    });
+    expect(result.reports[1].items[1]).toEqual({
+      code: "40HQ/40HC(2)",
+      type: "集装箱",
+      unitCapacity: 2,
+      boxCount: 4,
+    });
+    expect(result.reports[1].calculatedVehicleUnits).toBe(113);
+    expect(result.reports[1].isValid).toBe(true);
   });
 
   it("should execute generateText with instructions and file content without throwing InvalidPromptError", async () => {
     const { MockLanguageModelV4 } = await import("ai/test");
 
     const mockOutput = {
-      teamName: "E伟捷",
+      teamName: "伟捷",
       date: "11月2日",
       voyage: "中远海运欧亚航 V27",
       items: [
         { code: "48FR", type: "框架箱", unitCapacity: 3, boxCount: 28 },
-        { code: "40FM", type: "斜架箱/框架", unitCapacity: 3, boxCount: 26 },
+        { code: "40FM", type: "框架箱", unitCapacity: 3, boxCount: 26 },
       ],
       totalBoxes: 54,
       totalVehicleUnits: 162,
@@ -348,7 +422,7 @@ describe("extractLashingDataFromImage Service", () => {
       },
     });
 
-    expect(report.teamName).toBe("E伟捷");
+    expect(report.teamName).toBe("伟捷");
     expect(report.items).toHaveLength(2);
     expect(report.calculatedVehicleUnits).toBe(162);
     expect(report.isValid).toBe(true);
@@ -363,10 +437,10 @@ describe("extractLashingDataFromImage Service", () => {
       image: "data:image/jpeg;base64,custom",
       apiKey: "test-key",
       extractedReport: {
-        teamName: "E伟捷",
+        teamName: "伟捷",
         date: "10月14日",
         voyage: "GREEN KOTKA V18",
-        items: [{ code: "48FR", type: "框架箱", unitCapacity: 2, boxCount: 8 }],
+        items: [{ code: "48FR(2)", type: "框架箱", unitCapacity: 2, boxCount: 8 }],
         totalBoxes: 8,
         totalVehicleUnits: 16,
         workerCount: 12,
@@ -385,10 +459,10 @@ describe("extractLashingDataFromImage Service", () => {
             },
           ],
           correctedData: {
-            teamName: "E伟捷",
+            teamName: "伟捷",
             date: "10月14日",
             voyage: "GREEN KOTKA V18",
-            items: [{ code: "48FR", type: "框架箱", unitCapacity: 2, boxCount: 8 }],
+            items: [{ code: "48FR(2)", type: "框架箱", unitCapacity: 2, boxCount: 8 }],
             totalBoxes: 8,
             totalVehicleUnits: 16,
             workerCount: 12,
@@ -410,10 +484,10 @@ async function reverseVerifyLashingImageFallback() {
     image: "data:image/jpeg;base64,dummy",
     mockFallback: true,
     extractedReport: {
-      teamName: "E伟捷",
+      teamName: "伟捷",
       date: "11月2日",
       voyage: "中远海运欧亚航 V27",
-      items: [{ code: "48FR", type: "框架箱", unitCapacity: 3, boxCount: 28 }],
+      items: [{ code: "48FR(3)", type: "框架箱", unitCapacity: 3, boxCount: 28 }],
       totalBoxes: 28,
       totalVehicleUnits: 84,
       workerCount: 20,

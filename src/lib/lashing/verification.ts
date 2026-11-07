@@ -7,38 +7,73 @@ import {
 } from "./types";
 
 /**
- * Normalizes team name to canonical domain terminology "E伟捷"
+ * Normalizes team name to canonical domain terminology "伟捷" (without "E" prefix)
  */
 export function normalizeTeamName(rawTeamName: string): string {
   const trimmed = (rawTeamName || "").trim();
   if (trimmed.includes("伟捷")) {
-    return "E伟捷";
+    return "伟捷";
   }
-  return trimmed || "E伟捷";
+  const cleaned = trimmed.replace(/^[A-Za-z]\s*/, "").trim();
+  return cleaned || "伟捷";
+}
+
+/**
+ * Rule: Any container code containing 'F' or 'f' (e.g. 48FR(3), 40FM, 40FR, 40FP)
+ * is strictly "框架箱"; otherwise (e.g. 40HQ/40HC(3), 20GP(1)) it is "集装箱".
+ */
+export function resolveContainerType(code: string): string {
+  return /f/i.test(code || "") ? "框架箱" : "集装箱";
+}
+
+/**
+ * Rule: If the container code includes a number in parentheses like "48FR(3)" or "40HQ/40HC（2）",
+ * the number in parentheses is the unitCapacity (对应台数). Otherwise fall back to explicit unitCapacity.
+ */
+export function parseUnitCapacityFromCode(
+  code: string,
+  fallbackCapacity?: number
+): number {
+  const match = (code || "").match(/[（(]\s*(\d+(?:\.\d+)?)\s*[)）]/);
+  if (match && match[1]) {
+    return Number(match[1]);
+  }
+  return Number(fallbackCapacity) || 0;
 }
 
 /**
  * Domain Verification Seam:
- * Filters non-zero items, calculates vehicle units from coefficients,
+ * Filters non-zero items, resolves container type (F -> 框架箱, else -> 集装箱)
+ * and unitCapacity from code parentheses, calculates vehicle units,
  * verifies internal consistency, and produces structured report.
  */
 export function verifyLashingData(
   input: RawLashingInput,
   durationMs?: number,
   tokenUsage?: LashingTokenUsage,
-  reverseVerification?: ReverseVerificationState
+  reverseVerification?: ReverseVerificationState,
+  tableMeta?: {
+    tableIndex?: number;
+    totalTables?: number;
+    positionDescription?: string;
+  }
 ): WeijieLashingReport {
   const teamName = normalizeTeamName(input.teamName);
 
-  // Filter items: only include active作業箱型 (boxCount > 0)
+  // Filter items: only include active 作业箱型 (boxCount > 0)
   const items: LashingItem[] = (input.items || [])
     .filter((item) => Number(item.boxCount) > 0)
-    .map((item) => ({
-      code: item.code.trim(),
-      type: item.type.trim(),
-      unitCapacity: Number(item.unitCapacity) || 0,
-      boxCount: Number(item.boxCount) || 0,
-    }));
+    .map((item) => {
+      const code = item.code.trim();
+      const unitCapacity = parseUnitCapacityFromCode(code, item.unitCapacity);
+      const type = resolveContainerType(code);
+      return {
+        code,
+        type,
+        unitCapacity,
+        boxCount: Number(item.boxCount) || 0,
+      };
+    });
 
   // Calculate sum of boxes and vehicle units
   const calculatedBoxes = items.reduce((sum, item) => sum + item.boxCount, 0);
@@ -68,13 +103,20 @@ export function verifyLashingData(
     );
   }
 
-  // Per spec line 59: isValid is strictly calculatedVehicleUnits === totalVehicleUnits.
-  // Discrepancy in box count is reported in discrepancyMessage as an informational notice.
   const isValid = calculatedVehicleUnits === totalVehicleUnits;
   const discrepancyMessage =
     discrepancies.length > 0 ? discrepancies.join("；") : undefined;
 
   return {
+    ...(tableMeta?.tableIndex !== undefined
+      ? { tableIndex: tableMeta.tableIndex }
+      : {}),
+    ...(tableMeta?.totalTables !== undefined
+      ? { totalTables: tableMeta.totalTables }
+      : {}),
+    ...(tableMeta?.positionDescription
+      ? { positionDescription: tableMeta.positionDescription }
+      : {}),
     teamName,
     date: (input.date || "").trim(),
     voyage: (input.voyage || "").trim(),

@@ -22,12 +22,13 @@ describe("Domain Verification Seam (verifyLashingData)", () => {
 
     const report = verifyLashingData(input);
 
-    expect(report.teamName).toBe("E伟捷");
+    expect(report.teamName).toBe("伟捷");
     expect(report.date).toBe("11月2日");
     expect(report.voyage).toBe("中远海运欧亚航 V27");
     // Filtered items should only contain non-zero items
     expect(report.items).toHaveLength(2);
     expect(report.items.map((i) => i.code)).toEqual(["48FR", "40FM"]);
+    expect(report.items.map((i) => i.type)).toEqual(["框架箱", "框架箱"]);
     // Calculations: 28*3 + 26*3 = 84 + 78 = 162
     expect(report.calculatedVehicleUnits).toBe(162);
     expect(report.totalVehicleUnits).toBe(162);
@@ -35,6 +36,39 @@ describe("Domain Verification Seam (verifyLashingData)", () => {
     expect(report.isValid).toBe(true);
     expect(report.discrepancyMessage).toBeUndefined();
     expect(report.leaderSignature).toBe("李春河");
+  });
+
+  it("should enforce container type (F -> 框架箱, else -> 集装箱) and extract unitCapacity from parentheses", () => {
+    const input: RawLashingInput = {
+      teamName: "E伟捷",
+      date: "2026.10.28",
+      voyage: "绿上海 V6",
+      items: [
+        { code: "48FR(3)", type: "任意", unitCapacity: 0, boxCount: 5 },
+        { code: "40HQ/40HC(3)", type: "任意", unitCapacity: 0, boxCount: 41 },
+      ],
+      totalBoxes: 46,
+      totalVehicleUnits: 138,
+      workerCount: 17,
+      leaderSignature: "郭相帅",
+    };
+
+    const report = verifyLashingData(input);
+    expect(report.teamName).toBe("伟捷");
+    expect(report.items[0]).toEqual({
+      code: "48FR(3)",
+      type: "框架箱",
+      unitCapacity: 3,
+      boxCount: 5,
+    });
+    expect(report.items[1]).toEqual({
+      code: "40HQ/40HC(3)",
+      type: "集装箱",
+      unitCapacity: 3,
+      boxCount: 41,
+    });
+    expect(report.calculatedVehicleUnits).toBe(138);
+    expect(report.isValid).toBe(true);
   });
 
   it("should flag discrepancy when calculated vehicle units do not match totalVehicleUnits", () => {
@@ -83,9 +117,9 @@ describe("Domain Verification Seam (verifyLashingData)", () => {
     expect(report.discrepancyMessage).toContain("50");
   });
 
-  it("should normalize team name to E伟捷 when given 伟捷 or whitespace variations", () => {
+  it("should normalize team name to 伟捷 when given E伟捷 or 伟捷", () => {
     const input: RawLashingInput = {
-      teamName: "伟捷",
+      teamName: "E伟捷",
       date: "11月2日",
       voyage: "中远海运欧亚航 V27",
       items: [
@@ -99,13 +133,13 @@ describe("Domain Verification Seam (verifyLashingData)", () => {
 
     const report = verifyLashingData(input);
 
-    expect(report.teamName).toBe("E伟捷");
+    expect(report.teamName).toBe("伟捷");
     expect(report.isValid).toBe(true);
   });
 
   it("should handle empty or all-zero items gracefully", () => {
     const input: RawLashingInput = {
-      teamName: "E伟捷",
+      teamName: "伟捷",
       date: "11月2日",
       voyage: "中远海运欧亚航 V27",
       items: [
