@@ -476,6 +476,67 @@ describe("extractLashingDataFromImage Service", () => {
     expect(mismatchRev.isMatched).toBe(false);
     expect(mismatchRev.discrepancies).toHaveLength(1);
     expect(mismatchRev.correctedData?.leaderSignature).toBe("郭相帅");
+
+    // Test deterministic catch when LLM mistakenly returns isMatched: true despite allRowsAudit showing Row 1 (A同兴) vs Row 2 (E伟捷)
+    const rowJumpRev = await reverseVerifyLashingData({
+      image: "data:image/jpeg;base64,custom",
+      apiKey: "test-key",
+      extractedReport: {
+        teamName: "伟捷",
+        date: "2026.10.28",
+        voyage: "绿上海 V6",
+        items: [
+          { code: "48FR(3)", type: "框架箱", unitCapacity: 3, boxCount: 5 },
+          { code: "40HQ/40HC(3)", type: "集装箱", unitCapacity: 3, boxCount: 23 },
+        ],
+        totalBoxes: 28,
+        totalVehicleUnits: 84,
+        workerCount: 12,
+        leaderSignature: "彭滔",
+      },
+      generator: async () => ({
+        object: {
+          allRowsAudit: [
+            {
+              rowIndex: 1,
+              rawTeamName: "A同兴",
+              items: [
+                { code: "48FR(3)", type: "框架箱", unitCapacity: 3, boxCount: 5 },
+                { code: "40HQ/40HC(3)", type: "集装箱", unitCapacity: 3, boxCount: 23 },
+              ],
+              totalBoxes: 28,
+              totalVehicleUnits: 84,
+              workerCount: 12,
+              leaderSignature: "彭滔",
+            },
+            {
+              rowIndex: 2,
+              rawTeamName: "E伟捷",
+              items: [
+                { code: "48FR(3)", type: "框架箱", unitCapacity: 3, boxCount: 5 },
+                { code: "40HQ/40HC(3)", type: "集装箱", unitCapacity: 3, boxCount: 41 },
+              ],
+              totalBoxes: 46,
+              totalVehicleUnits: 138,
+              workerCount: 17,
+              leaderSignature: "郭相帅",
+            },
+          ],
+          isMatched: true,
+          summary: "复核完成",
+          discrepancies: [],
+          correctedData: null,
+        },
+      }),
+    });
+
+    expect(rowJumpRev.status).toBe("mismatch");
+    expect(rowJumpRev.isMatched).toBe(false);
+    expect(rowJumpRev.discrepancies.length).toBeGreaterThanOrEqual(3);
+    expect(rowJumpRev.correctedData?.totalBoxes).toBe(46);
+    expect(rowJumpRev.correctedData?.totalVehicleUnits).toBe(138);
+    expect(rowJumpRev.correctedData?.workerCount).toBe(17);
+    expect(rowJumpRev.correctedData?.leaderSignature).toBe("郭相帅");
   });
 });
 

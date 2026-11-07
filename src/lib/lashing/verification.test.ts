@@ -157,4 +157,56 @@ describe("Domain Verification Seam (verifyLashingData)", () => {
     expect(report.calculatedVehicleUnits).toBe(0);
     expect(report.isValid).toBe(true);
   });
+
+  it("should select the E伟捷 row from allTeamRows even if top-level fields mistakenly copied Row 1 (A同兴)", () => {
+    const input: RawLashingInput = {
+      date: "2026.10.28",
+      voyage: "绿上海 V6",
+      allTeamRows: [
+        {
+          rowIndex: 1,
+          rawTeamName: "A同兴",
+          items: [
+            { code: "48FR(3)", type: "框架箱", unitCapacity: 3, boxCount: 5 },
+            { code: "40HQ/40HC(3)", type: "集装箱", unitCapacity: 3, boxCount: 23 },
+          ],
+          totalBoxes: 28,
+          totalVehicleUnits: 84,
+          workerCount: 12,
+          leaderSignature: "彭滔",
+        },
+        {
+          rowIndex: 2,
+          rawTeamName: "E伟捷",
+          items: [
+            { code: "48FR(3)", type: "框架箱", unitCapacity: 3, boxCount: 5 },
+            { code: "40HQ/40HC(3)", type: "集装箱", unitCapacity: 3, boxCount: 41 },
+          ],
+          totalBoxes: 46,
+          totalVehicleUnits: 138,
+          workerCount: 17,
+          leaderSignature: "郭相帅",
+        },
+      ],
+      // Suppose top-level fields accidentally had Row 1 (A同兴)
+      teamName: "伟捷",
+      items: [
+        { code: "48FR(3)", type: "框架箱", unitCapacity: 3, boxCount: 5 },
+        { code: "40HQ/40HC(3)", type: "集装箱", unitCapacity: 3, boxCount: 23 },
+      ],
+      totalBoxes: 28,
+      totalVehicleUnits: 84,
+      workerCount: 12,
+      leaderSignature: "彭滔",
+    };
+
+    const report = verifyLashingData(input);
+    expect(report.teamName).toBe("伟捷");
+    expect(report.items[1].boxCount).toBe(41);
+    expect(report.totalBoxes).toBe(46);
+    expect(report.totalVehicleUnits).toBe(138);
+    expect(report.workerCount).toBe(17);
+    expect(report.leaderSignature).toBe("郭相帅");
+    expect(report.isValid).toBe(true);
+  });
 });

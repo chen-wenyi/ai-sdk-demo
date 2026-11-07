@@ -53,30 +53,33 @@ export const MASTER_TABLE_DISCOVERY_PROMPT = `你是一名专业的港口单据�
 export const WEIJIE_EXTRACTION_SYSTEM_PROMPT = `你是一名专业的港口集装箱绑扎作业单据视觉识别子模型专家（Sub-Model Worker）。
 你的任务是从用户上传的绑扎统计表图片中，完全依据图片上的真实印刷与手写内容，精准提取指定表格中目标绑扎队“伟捷”（表格中常写为“E伟捷”或“伟捷”，输出时 teamName 统一写为 "伟捷"）所在横行的作业数据。
 
-【核心业务与识别规则（严禁编造或套用任何预设数值）】：
-1. 锁定目标表格与“伟捷”横行：
-   - 如果指令中指定了“第 N 张表（如上半部分第1张表或下半部分第2张表）”，你必须【只看该指定表格】，严禁读取另一张表的数字！
-   - 在该表格左侧“队伍”或“绑扎队”列中定位“E伟捷”或“伟捷”所在的那一横行（通常在第 2 行数据行，位于 A同兴 下方、F杰兴 上方）。
-   - teamName 统一输出为 "伟捷"（去掉前面的字母 E）。
+【头号红线警告：严禁发生“串行”（严禁把第1行 A同兴 的数据误读成第2行 E伟捷）！】：
+在港口绑扎表（如《太仓框架箱装车绑扎量日报表》）中，左侧第1列有数字，中间往往隔着多列空白格，到中间偏右及最右侧才有数字和签名。
+如果你直接跳着只找“E伟捷”，视线跨过中间空白列时极易向上漂移，把右侧各列【最顶上第1行（A同兴）】的数字、合计、人数和队长签名误读给第2行“E伟捷”！
 
-2. 箱型代码（code）、箱型分类（type）与对应台数（unitCapacity）规则：
-   - 沿着该表“伟捷”这一横行从左向右逐格检查各个箱型列，【只提取有非零数值（boxCount > 0）的列】，空白格一律忽略。
-   - 表头格式兼容两种形式：
-     - 形式A（代码带括号系数，如《太仓框架箱装车绑扎量日报表》）：表头形如 "48FR(3)"、"40HQ/40HC(3) 一斜两直"、"40HQ/40HC(2) 两直装"、"20GP(1) 一平托"。
-       * code：提取表头箱型代码及括号系数（如 "48FR(3)"、"40HQ/40HC(3)"、"40HQ/40HC(2)"）。
-       * unitCapacity（对应台数）：代码括号里的数字即为对应台数！例如 (3) 代表 unitCapacity = 3，(2) 代表 unitCapacity = 2，(1) 代表 unitCapacity = 1。
-     - 形式B（多层表头，如《每天各绑扎队作业数量统计表》）：第一行是代码（如 48FR、40FM），第三行是单箱台数系数（如 3、2）。
-   - 箱型分类（type）硬性规则：
-     - 只要箱型代码（code）中包含字母 "F" 或 "f"（如 48FR、40FM、40FR、40FP），type 必定为 "框架箱"！
-     - 代码中不包含字母 "F"（如 40HQ/40HC、20GP），type 必定为 "集装箱"！
+【强制执行的“全表逐行占位 + 纵向列对位”两步法】：
+第一步（必填 allTeamRows）：
+- 你必须先按【从上到下】的物理行顺序（rowIndex = 1, 2, 3, 4...），把该表格中每一行队伍（例如：第1行 A同兴、第2行 E伟捷、第3行 F杰兴、第4行 H中波 等）各自的数据完整填入 allTeamRows 数组！
+- 在读取任何一个有手写内容的列（包括箱型列、箱数合计、车辆数合计、绑扎人数、队长确认）时，必须【从上往下数格线】：
+  * 紧贴表头下方的第 1 格手写数字/签名 -> 必定属于 rowIndex = 1（第1行，如 A同兴）！
+  * 往下第 2 格手写数字/签名 -> 必定属于 rowIndex = 2（第2行，如 E伟捷）！
+  * 往下第 3 格手写数字/签名 -> 必定属于 rowIndex = 3（第3行，如 F杰兴）！
+  * 最底部“合计”行的数字 = 上面各队伍行在同一列数字的纵向相加之和（你必须用底部合计行纵向检验每一列各行的数字是否对位准确）！
+- 绝不允许把第 1 格（第1行 A同兴）的数字或队长签名填到第 2 行（E伟捷）里！
 
-3. 基本信息、右侧合计与手写区提取（严格按该表真实内容读取）：
-   - date：读取该张表格左上角或左侧的“日期”真实文字（手写或印刷）。
-   - voyage：读取该张表格左上角或左侧的“船名/航次”真实文字（手写或印刷，请逐笔仔细辨认）。
-   - totalBoxes：读取该表“伟捷”行在右侧“箱数合计 / 合计”列的数字。
-   - totalVehicleUnits：读取该表“伟捷”行在右侧“车辆数合计 / 绑扎车装台数”列的数字（可用于交叉验证：应等于各非零列 boxCount × unitCapacity 之和）。
-   - workerCount：读取该表“伟捷”行在右侧“绑扎人数 / 各队作业人数”列对应的手写数字（注意严格水平对齐“伟捷”所在行）。
-   - leaderSignature：读取该表“伟捷”行在右侧“队长确认 / 队长签名”列对应的手写姓名（注意严格水平对齐“伟捷”所在行）。
+第二步（提取“伟捷”目标行到顶层字段）：
+- 完成 allTeamRows 的逐行拆解后，从中找到 rawTeamName 为 "E伟捷" 或 "伟捷" 的那一行（即第2行），将该行的 items、totalBoxes、totalVehicleUnits、workerCount、leaderSignature 原样填入顶层字段，且顶层 teamName 统一输出为 "伟捷"（去掉前缀字母 E）。
+
+【箱型代码（code）、箱型分类（type）与对应台数（unitCapacity）规则】：
+1. 只提取该行有非零数值（boxCount > 0）的箱型列，空白列忽略。
+2. 表头格式兼容两种形式：
+   - 形式A（代码带括号系数，如 "48FR(3)"、"40HQ/40HC(3) 一斜两直"、"40HQ/40HC(2) 两直装"）：
+     * code：提取箱型代码及括号系数（如 "48FR(3)"、"40HQ/40HC(3)"、"40HQ/40HC(2)"）。
+     * unitCapacity（对应台数）：代码括号里的数字即为对应台数！如 (3) 为 3，(2) 为 2，(1) 为 1。
+   - 形式B（多层表头）：第一行是代码（如 48FR、40FM），第三行是对应台数（如 3、2）。
+3. 箱型分类（type）硬性规则：
+   - 只要箱型代码（code）中包含字母 "F" 或 "f"（如 48FR、40FM、40FR、40FP），type 必定为 "框架箱"！
+   - 代码中不包含字母 "F"（如 40HQ/40HC、20GP），type 必定为 "集装箱"！
 
 请严格按照提供的结构化 Schema 输出 JSON 对象。`;
 
@@ -587,7 +590,9 @@ export async function extractLashingDataFromImage(
       content: [
         {
           type: "text" as const,
-          text: `${tableScopeInstruction}请完全依据图片真实内容，识别并提取该表中“伟捷”（或“E伟捷”，输出统一为“伟捷”）队伍所在行的绑扎作业非零箱型明细（代码含F必为框架箱，否则为集装箱；代码括号内数字即为对应台数）、日期、船名航次、合计数据、人数及手写签名，严格按 JSON Schema 输出。`,
+          text: `${tableScopeInstruction}请严格遵循“先全表逐行扫描、再提取伟捷”的两步法：
+1. 先在 allTeamRows 中按从上到下的行顺序（第1行 A同兴、第2行 E伟捷、第3行 F杰兴...）逐行提取每一行的数据！注意：每一列最顶上紧贴表头下方的第1个数字和签名属于第1行（A同兴），往下第2个数字和签名才属于第2行（E伟捷），严禁把第1行 A同兴 的数字或队长签名串行读到第2行 E伟捷！
+2. 再从 allTeamRows 中将“E伟捷/伟捷”那一行（第2行）的非零箱型明细（代码含F必为框架箱，否则为集装箱；代码括号内数字即为对应台数）、合计箱数、车辆数合计、绑扎人数及队长签名填入顶层字段（teamName 统一输出为“伟捷”）。`,
         },
         {
           type: "file" as const,
@@ -634,7 +639,7 @@ export async function extractLashingDataFromImage(
 
   const durationMs = Math.max(1, Date.now() - startTime);
 
-  // Domain Verification Seam
+  // Domain Verification Seam (automatically selects E伟捷/伟捷 row from allTeamRows if present)
   return verifyLashingData(rawOutput, durationMs, capturedUsage, undefined, tableMeta);
 }
 
@@ -880,26 +885,29 @@ export async function extractMultipleTablesFromImage(
 
 export const WEIJIE_REVERSE_VERIFICATION_SYSTEM_PROMPT = `你是一名严谨的港口集装箱绑扎单据【独立复核审计员】。
 第一阶段子模型已经从图片中的指定表格提取出了“伟捷”（表中常写为“E伟捷”或“伟捷”，输出统一为“伟捷”）队的 JSON 数据。
-现在请你对照原图中的【对应指定表格】，对该 JSON 中的【全部 7 类核心字段】逐一进行反向视觉核对，确保没有任何遗漏：
+现在请你对照原图中的【对应指定表格】，对该 JSON 中的【全部核心字段】逐一进行反向视觉核对。
 
-【必须逐项核对的完整清单（严禁漏检）】：
-1. 目标表格与日期（date）、船名航次（voyage）：
-   - 若图片有多张表（如上下两张表），必须先锁定当前 JSON 对应的那一张表（根据 positionDescription / tableIndex）。
-   - 放大观察该表左上角或左侧的“日期”与“船名/航次”，逐字比对首轮提取的文字与原图手写或印刷文字是否一致（发现错别字即必须判定为不一致！）。
-2. 防串行核对（伟捷行定位）：
-   - 在该表“队伍/绑扎队”列重新定位“E伟捷/伟捷”行，确认首轮提取的所有数值确实位于“伟捷”这一横行，而非上下相邻的其他队伍行（如A同兴、F杰兴、H中凌）或底部合计行。
-3. 防串列与漏列核对（items 箱型代码、分类、对应台数、箱数）：
-   - 沿该表“伟捷”行从左到右逐格检查，确认没有漏掉任何其他非空白的数字列（仅核对有数值的列，空白列忽略）。
-   - 核对每个数字对应的表头箱型代码（code）及括号内的对应台数系数（unitCapacity，如 48FR(3) 对应台数为 3，40HQ/40HC(2) 对应台数为 2）。
-   - 核对箱型分类（type）：代码含字母 F 必为“框架箱”，不含 F 必为“集装箱”。
-4. 合计核对（totalBoxes 与 totalVehicleUnits）：
-   - 核对该表“伟捷”行右侧的“箱数合计/合计”（totalBoxes）和“车辆数合计/绑扎车装台数”（totalVehicleUnits）是否与原图一致。
-5. 手写区对齐与字迹核对（workerCount 与 leaderSignature）：
-   - 检查该表“伟捷”行右侧手写的“绑扎人数/各队作业人数”（workerCount）与“队长确认/队长签名”（leaderSignature）是否严格水平对齐“伟捷”行的格线，并逐笔核对手写姓名是否准确。
+【头号重点防范：彻底排查“串行”（把第1行 A同兴 误读成第2行 E伟捷）！】：
+在很多情况下，首轮提取模型会因为表格中间有多个空白列，而把【第1行（A同兴）】整行的数字（箱数、合计箱数、车辆数合计、绑扎人数、队长签名）张冠李戴到了【第2行（E伟捷）】身上！
+虽然第1行（A同兴）自身的算术“箱数 × 系数 = 车辆数合计”也是成立的，但那是第1行 A同兴 的数据，绝不是第2行 E伟捷 的数据！
+
+【强制执行的复核步骤】：
+第一步（必填 allRowsAudit）：
+- 在判断 isMatched 之前，你必须先按【从上到下】的物理行顺序，把该表中前3~4个队伍行（例如：第1行 A同兴、第2行 E伟捷、第3行 F杰兴）各自的数字和队长签名逐行抄录到 allRowsAudit 数组中！
+- 在每一列（箱型列、箱数合计、车辆数合计、绑扎人数、队长确认）中，从上往下数：
+  * 紧贴表头下方的第 1 个手写数字/签名属于【第1行 A同兴】；
+  * 往下第 2 个手写数字/签名才属于【第2行 E伟捷】；
+  * 往下第 3 个手写数字/签名属于【第3行 F杰兴】；
+  * 最底部“合计”行的数字 = 上面各队伍行同一列数字之和。
+
+第二步（逐项比对 allRowsAudit 中的“E伟捷”行与首轮 JSON）：
+1. 日期（date）与船名航次（voyage）：核对该表左上角手写或印刷的日期、船名航次是否有错字或漏字。
+2. 串行核对：比对首轮 JSON 的箱数、totalBoxes、totalVehicleUnits、workerCount、leaderSignature 是否真正等于 allRowsAudit 中第2行“E伟捷”的数据！如果首轮 JSON 实际上等于第1行“A同兴”的数据，必须立即判定为串行（isMatched = false）！
+3. 箱型代码、分类（含F必为框架箱，否则为集装箱）与括号内对应台数核对。
 
 请严格按照 ReverseVerificationRawSchema 输出 JSON：
-- 如果以上 5 大项全部核对无误：设置 isMatched = true，discrepancies = []，correctedData = null，并在 summary 中明确列出已核对的表序号、日期、船名航次、箱型箱数、合计、人数及签名结论。
-- 如果发现任何一处文字偏差、串行、串列、漏列或手写区错位：必须设置 isMatched = false，在 discrepancies 中逐项列出差异，并在 correctedData 中提供修正后的完整“伟捷”数据（teamName 为 "伟捷"）。`;
+- 如果全部核对无误：设置 isMatched = true，discrepancies = []，correctedData = null。
+- 如果发现串行（如误读了A同兴行）、错字、漏列或手写区错位：必须设置 isMatched = false，在 discrepancies 中列出所有差异，并在 correctedData 中填入第2行“E伟捷”的真实修正数据（teamName 为 "伟捷"）。`;
 
 export interface ReverseVerifyOptions {
   image?: string;
@@ -918,7 +926,10 @@ export interface ReverseVerifyOptions {
 /**
  * Stage 2 Reverse Vision Verification Service:
  * Takes the original image and Stage 1 extracted JSON for a specific table,
- * and asks the vision LLM to cross-check row/column alignment, numbers, and handwritten signature.
+ * asks the vision LLM to enumerate all team rows from top to bottom (`allRowsAudit`)
+ * and cross-check row/column alignment, numbers, and handwritten signature.
+ * Also applies a deterministic code-level comparison against `allRowsAudit` to guarantee
+ * row-jumping (e.g., reading Row 1 A同兴 instead of Row 2 E伟捷) is always caught.
  */
 export async function reverseVerifyLashingData(
   options: ReverseVerifyOptions
@@ -1036,11 +1047,11 @@ export async function reverseVerifyLashingData(
       content: [
         {
           type: "text" as const,
-          text: `${tableScopeNote}以下是首轮提取的“伟捷”行 JSON 数据。请对照原图对应表格逐项进行二次反向视觉核对（必须逐一检查：1.日期 date 与船名航次 voyage 是否准确；2.伟捷行是否串行；3.箱型代码 code、括号对应台数 unitCapacity、箱数 boxCount 是否串列或漏列；4.合计箱数 totalBoxes 与车装台数 totalVehicleUnits；5.手写人数 workerCount 与队长签名 leaderSignature 的水平行对齐及字迹），并严格按 JSON Schema 输出复核结果：\n${JSON.stringify(
-            candidateSummary,
-            null,
-            2
-          )}`,
+          text: `${tableScopeNote}以下是首轮提取的“伟捷”行 JSON 数据。
+请执行严格的防串行二次反向视觉核对：
+1. 必须先在 allRowsAudit 中按从上到下的顺序逐行抄录该表中第1行（如A同兴）、第2行（如E伟捷）、第3行（如F杰兴）各自的箱型箱数、合计箱数、车辆数合计、绑扎人数和队长签名（注意每一列最上面第1个数字/签名属于第1行 A同兴，往下第2个数字/签名才属于第2行 E伟捷！）。
+2. 将 allRowsAudit 中第2行“E伟捷”的真实数据与下方首轮提取 JSON 逐项对比（同时核对左上角日期 date 和船名航次 voyage）。若首轮提取把第1行 A同兴 的数据误读成了 E伟捷，必须设置 isMatched = false 并在 correctedData 中填入第2行 E伟捷 的真实数据！
+首轮提取 JSON：\n${JSON.stringify(candidateSummary, null, 2)}`,
         },
         {
           type: "file" as const,
@@ -1111,7 +1122,93 @@ export async function reverseVerifyLashingData(
   }
 
   const durationMs = Math.max(1, Date.now() - startTime);
-  const discrepancies = rawResult.discrepancies || [];
+  const discrepancies = [...(rawResult.discrepancies || [])];
+  let correctedData = rawResult.correctedData ?? undefined;
+
+  // Deterministic code-level audit against allRowsAudit:
+  // Even if the LLM mistakenly set isMatched=true, if allRowsAudit shows a different
+  // "伟捷" row than candidateSummary, deterministically flag mismatch and build correctedData.
+  if (Array.isArray(rawResult.allRowsAudit) && rawResult.allRowsAudit.length > 0) {
+    const auditedWeijie = rawResult.allRowsAudit.find((r) =>
+      String(r?.rawTeamName || "").includes("伟捷")
+    );
+    if (
+      auditedWeijie &&
+      ((Array.isArray(auditedWeijie.items) &&
+        auditedWeijie.items.some((i) => Number(i.boxCount) > 0)) ||
+        Number(auditedWeijie.totalBoxes) > 0)
+    ) {
+      if (
+        Number(auditedWeijie.totalBoxes) > 0 &&
+        Number(auditedWeijie.totalBoxes) !== Number(candidateSummary.totalBoxes)
+      ) {
+        if (!discrepancies.some((d) => d.field === "totalBoxes")) {
+          discrepancies.push({
+            field: "totalBoxes",
+            expectedByFirstPass: String(candidateSummary.totalBoxes),
+            foundInSecondPass: String(auditedWeijie.totalBoxes),
+            reason: "全表逐行核对发现伟捷行合计箱数不一致（疑似首轮发生串行）",
+          });
+        }
+      }
+      if (
+        Number(auditedWeijie.totalVehicleUnits) > 0 &&
+        Number(auditedWeijie.totalVehicleUnits) !==
+          Number(candidateSummary.totalVehicleUnits)
+      ) {
+        if (!discrepancies.some((d) => d.field === "totalVehicleUnits")) {
+          discrepancies.push({
+            field: "totalVehicleUnits",
+            expectedByFirstPass: String(candidateSummary.totalVehicleUnits),
+            foundInSecondPass: String(auditedWeijie.totalVehicleUnits),
+            reason: "全表逐行核对发现伟捷行车辆数合计不一致（疑似首轮发生串行）",
+          });
+        }
+      }
+      if (
+        Number(auditedWeijie.workerCount) > 0 &&
+        Number(auditedWeijie.workerCount) !==
+          Number(candidateSummary.workerCount)
+      ) {
+        if (!discrepancies.some((d) => d.field === "workerCount")) {
+          discrepancies.push({
+            field: "workerCount",
+            expectedByFirstPass: String(candidateSummary.workerCount),
+            foundInSecondPass: String(auditedWeijie.workerCount),
+            reason: "全表逐行核对发现伟捷行绑扎人数不一致（疑似首轮发生串行）",
+          });
+        }
+      }
+      if (
+        auditedWeijie.leaderSignature &&
+        auditedWeijie.leaderSignature.trim() !==
+          candidateSummary.leaderSignature.trim()
+      ) {
+        if (!discrepancies.some((d) => d.field === "leaderSignature")) {
+          discrepancies.push({
+            field: "leaderSignature",
+            expectedByFirstPass: candidateSummary.leaderSignature,
+            foundInSecondPass: auditedWeijie.leaderSignature.trim(),
+            reason: "全表逐行核对发现伟捷行队长签名不一致（疑似首轮误读相邻行签名）",
+          });
+        }
+      }
+
+      if (discrepancies.length > 0 && !correctedData) {
+        correctedData = {
+          teamName: "伟捷",
+          date: candidateSummary.date,
+          voyage: candidateSummary.voyage,
+          items: auditedWeijie.items,
+          totalBoxes: auditedWeijie.totalBoxes,
+          totalVehicleUnits: auditedWeijie.totalVehicleUnits,
+          workerCount: auditedWeijie.workerCount,
+          leaderSignature: auditedWeijie.leaderSignature,
+        };
+      }
+    }
+  }
+
   const isMatched =
     Boolean(rawResult.isMatched) && discrepancies.length === 0;
 
@@ -1120,7 +1217,7 @@ export async function reverseVerifyLashingData(
     isMatched,
     summary: rawResult.summary,
     discrepancies,
-    correctedData: rawResult.correctedData ?? undefined,
+    correctedData,
     durationMs,
     tokenUsage: capturedUsage,
   };

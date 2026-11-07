@@ -58,10 +58,27 @@ export function verifyLashingData(
     positionDescription?: string;
   }
 ): WeijieLashingReport {
-  const teamName = normalizeTeamName(input.teamName);
+  // If allTeamRows row-by-row scan is present, locate the exact row for "伟捷" / "E伟捷"
+  const scannedWeijieRow = Array.isArray(input.allTeamRows)
+    ? input.allTeamRows.find((row) =>
+        String(row?.rawTeamName || "").includes("伟捷")
+      )
+    : undefined;
+
+  const hasValidScannedRow =
+    scannedWeijieRow &&
+    ((Array.isArray(scannedWeijieRow.items) &&
+      scannedWeijieRow.items.some((i) => Number(i.boxCount) > 0)) ||
+      Number(scannedWeijieRow.totalBoxes) > 0);
+
+  const effectiveRow = hasValidScannedRow ? scannedWeijieRow : input;
+
+  const teamName = normalizeTeamName(
+    hasValidScannedRow ? scannedWeijieRow.rawTeamName : input.teamName
+  );
 
   // Filter items: only include active 作业箱型 (boxCount > 0)
-  const items: LashingItem[] = (input.items || [])
+  const items: LashingItem[] = (effectiveRow.items || [])
     .filter((item) => Number(item.boxCount) > 0)
     .map((item) => {
       const code = item.code.trim();
@@ -82,11 +99,20 @@ export function verifyLashingData(
     0
   );
 
-  const totalBoxes = Number(input.totalBoxes) || calculatedBoxes;
+  const totalBoxes = Number(effectiveRow.totalBoxes) || calculatedBoxes;
   const totalVehicleUnits =
-    input.totalVehicleUnits !== undefined && input.totalVehicleUnits !== null
-      ? Number(input.totalVehicleUnits)
+    effectiveRow.totalVehicleUnits !== undefined &&
+    effectiveRow.totalVehicleUnits !== null
+      ? Number(effectiveRow.totalVehicleUnits)
       : calculatedVehicleUnits;
+
+  const resolvedWorkerCount =
+    Number(effectiveRow.workerCount) || Number(input.workerCount) || 0;
+  const resolvedLeaderSignature = (
+    effectiveRow.leaderSignature ||
+    input.leaderSignature ||
+    ""
+  ).trim();
 
   // Discrepancy checks
   const discrepancies: string[] = [];
@@ -123,8 +149,8 @@ export function verifyLashingData(
     items,
     totalBoxes,
     totalVehicleUnits,
-    workerCount: Number(input.workerCount) || 0,
-    leaderSignature: (input.leaderSignature || "").trim(),
+    workerCount: resolvedWorkerCount,
+    leaderSignature: resolvedLeaderSignature,
     calculatedVehicleUnits,
     calculatedBoxes,
     isValid,
