@@ -235,6 +235,7 @@ export function createQwenClient(options: {
   apiKey?: string;
   baseURL?: string;
   onUsage?: (usage: LashingTokenUsage) => void;
+  onRawResponse?: (rawContent: string, fullJson: Record<string, unknown>) => void;
 }) {
   const apiKey =
     options.apiKey ||
@@ -265,13 +266,26 @@ export function createQwenClient(options: {
       }
     }
     const response = await fetch(input, init);
-    if (options.onUsage && response.ok) {
+    if ((options.onUsage || options.onRawResponse) && response.ok) {
       try {
         const cloned = response.clone();
         const json = (await cloned.json()) as Record<string, unknown>;
-        const usage = extractDashScopeUsage(json?.usage);
-        if (usage) {
-          options.onUsage(usage);
+        if (options.onUsage) {
+          const usage = extractDashScopeUsage(json?.usage);
+          if (usage) {
+            options.onUsage(usage);
+          }
+        }
+        if (options.onRawResponse) {
+          const choices = Array.isArray(json?.choices)
+            ? (json.choices as Array<Record<string, unknown>>)
+            : [];
+          const firstMsg = choices[0]?.message as Record<string, unknown> | undefined;
+          const rawContent =
+            typeof firstMsg?.content === "string"
+              ? firstMsg.content
+              : JSON.stringify(firstMsg?.content ?? json);
+          options.onRawResponse(rawContent, json);
         }
       } catch {
         // Ignore non-JSON or stream responses
@@ -661,12 +675,19 @@ export async function reverseVerifyLashingData(
     DEFAULT_QWEN_MODEL;
 
   let capturedUsage: LashingTokenUsage | undefined;
+  let capturedRawContent = "";
 
   const { client } = createQwenClient({
     apiKey: resolvedApiKey,
     baseURL: resolvedBaseURL,
     onUsage: (u) => {
       capturedUsage = u;
+    },
+    onRawResponse: (rawContent) => {
+      capturedRawContent = rawContent;
+      console.log("\n=== [ReverseVerify DashScope Raw Content] ===");
+      console.log(rawContent);
+      console.log("=============================================\n");
     },
   });
 
@@ -716,6 +737,22 @@ export async function reverseVerifyLashingData(
         capturedUsage = extractDashScopeUsage(res.usage);
       }
     } catch (err) {
+      const errObj = err as {
+        message?: string;
+        text?: string;
+        cause?: { message?: string; issues?: unknown };
+      };
+      const rawText = errObj?.text || capturedRawContent || "(无原始文本)";
+      const causeMsg =
+        errObj?.cause?.message ||
+        (errObj?.cause ? JSON.stringify(errObj.cause) : "");
+
+      console.error("\n=== [ReverseVerify Schema Error Details] ===");
+      console.error("Error Message:", errObj?.message);
+      console.error("Cause / Zod Issues:", causeMsg);
+      console.error("Raw LLM Output Text:", rawText);
+      console.error("============================================\n");
+
       if (shouldFallback) {
         return {
           status: "passed",
@@ -728,12 +765,10 @@ export async function reverseVerifyLashingData(
       return {
         status: "error",
         isMatched: false,
-        summary:
-          err instanceof Error
-            ? `二次验证请求异常：${err.message}`
-            : "二次验证请求异常",
+        summary: `二次验证请求异常：${errObj?.message || "未知错误"}\n【Zod 校验错误】: ${causeMsg}\n【大模型原始返回】: ${rawText}`,
         discrepancies: [],
         durationMs: Math.max(1, Date.now() - startTime),
+        tokenUsage: capturedUsage,
       };
     }
   }

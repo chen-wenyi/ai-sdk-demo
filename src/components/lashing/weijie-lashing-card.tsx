@@ -571,7 +571,7 @@ export function WeijieLashingCard({
                 </>
               )}
               {report.reverseVerification.status === "error" && (
-                <span>
+                <span className="whitespace-pre-wrap font-mono text-[11px] break-all">
                   {report.reverseVerification.summary || "二次反向核对未完成"}
                 </span>
               )}
