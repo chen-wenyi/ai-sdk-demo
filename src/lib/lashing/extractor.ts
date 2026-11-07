@@ -774,16 +774,16 @@ export async function reverseVerifyLashingData(
   }
 
   const durationMs = Math.max(1, Date.now() - startTime);
+  const discrepancies = rawResult.discrepancies || [];
   const isMatched =
-    Boolean(rawResult.isMatched) &&
-    (!rawResult.discrepancies || rawResult.discrepancies.length === 0);
+    Boolean(rawResult.isMatched) && discrepancies.length === 0;
 
   return {
     status: isMatched ? "passed" : "mismatch",
     isMatched,
     summary: rawResult.summary,
-    discrepancies: rawResult.discrepancies || [],
-    correctedData: rawResult.correctedData,
+    discrepancies,
+    correctedData: rawResult.correctedData ?? undefined,
     durationMs,
     tokenUsage: capturedUsage,
   };

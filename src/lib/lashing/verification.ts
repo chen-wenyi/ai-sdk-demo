@@ -87,7 +87,7 @@ export function verifyLashingData(
     calculatedBoxes,
     isValid,
     discrepancyMessage,
-    isHumanVerified: input.isHumanVerified,
+    isHumanVerified: input.isHumanVerified ?? undefined,
     durationMs,
     tokenUsage,
     reverseVerification,

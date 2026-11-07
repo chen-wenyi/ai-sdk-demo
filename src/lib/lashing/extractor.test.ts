@@ -31,6 +31,19 @@ describe("Extractor Utilities", () => {
     });
   });
 
+  it("should accept DashScope reverse verification JSON when correctedData is null", async () => {
+    const { ReverseVerificationRawSchema } = await import("./types");
+    const dashscopePayload = {
+      isMatched: true,
+      summary:
+        "经反向视觉核对，'E伟捷'行数据与原图完全一致。1. 防串行核对：确认数据位于'E伟捷'行（第2数据行），未与上一行'A同兴'或下一行'F杰兴'混淆。",
+      discrepancies: [],
+      correctedData: null,
+    };
+    const parsed = ReverseVerificationRawSchema.safeParse(dashscopePayload);
+    expect(parsed.success).toBe(true);
+  });
+
   it("should extract image from direct string fields (image, dataUrl, file)", () => {
     const direct1 = extractImageFromPayload({
       image: "data:image/jpeg;base64,abc1234",
